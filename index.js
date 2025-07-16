@@ -8,19 +8,17 @@ app.use(express.json());
 
 let accessToken = null;
 
-// 👉 Rota para iniciar autenticação com Bling
 app.get('/autenticar', (req, res) => {
-  const authUrl = `https://www.bling.com.br/api/v3/oauth/authorize?response_type=code&client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&state=blingwix123`;
+  const state = 'bling_wix_state';
+  const authUrl = `https://www.bling.com.br/api/v3/oauth/authorize?response_type=code&client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&state=${state}`;
   res.redirect(authUrl);
 });
 
-// 👉 Rota de callback para receber o código e trocar por token
 app.get('/callback', async (req, res) => {
   const code = req.query.code;
 
   if (!code) {
-    console.error("Código ausente na callback:", req.query);
-    return res.status(400).send("Erro: Código ausente na URL de callback.");
+    return res.status(400).send("❌ Código de autorização ausente.");
   }
 
   const basicAuth = Buffer.from(`${process.env.CLIENT_ID}:${process.env.CLIENT_SECRET}`).toString('base64');
@@ -52,17 +50,26 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-// 👉 Rota para buscar produtos no Bling e enviar ao Wix
 app.get('/enviar-wix', async (req, res) => {
+  if (!accessToken) {
+    return res.status(401).send("❌ Token não autenticado. Acesse /autenticar primeiro.");
+  }
+
   try {
-    const produtos = await axios.get('https://www.bling.com.br/api/v3/produtos', {
+    const produtosResponse = await axios.get('https://www.bling.com.br/api/v3/produtos', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/json'
       }
     });
 
-    const estoque = produtos.data.data
+    const produtos = produtosResponse.data?.data;
+
+    if (!Array.isArray(produtos)) {
+      throw new Error("Formato de dados inesperado dos produtos.");
+    }
+
+    const estoque = produtos
       .filter(p => Number(p.estoqueAtual || 0) > 0)
       .map(p => ({
         codigo: p.codigo,
@@ -74,6 +81,7 @@ app.get('/enviar-wix', async (req, res) => {
       headers: { 'Content-Type': 'application/json' }
     });
 
+    console.log("✅ Produtos enviados com sucesso para o Wix!");
     res.json({ enviado: estoque.length, respostaWix: wixResponse.data });
   } catch (err) {
     console.error("❌ Erro ao buscar/enviar produtos:", err.response?.data || err.message);
@@ -81,7 +89,6 @@ app.get('/enviar-wix', async (req, res) => {
   }
 });
 
-// 👉 Inicia o servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Middleware rodando na porta ${PORT}`);
