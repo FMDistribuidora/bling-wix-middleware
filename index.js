@@ -15,16 +15,25 @@ app.get('/autenticar', (req, res) => {
 
 app.get('/callback', async (req, res) => {
   const code = req.query.code;
+
+  const data = qs.stringify({
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: process.env.REDIRECT_URI,
+    client_id: process.env.CLIENT_ID,
+    client_secret: process.env.CLIENT_SECRET
+  });
+
   try {
-    const response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', qs.stringify({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: process.env.REDIRECT_URI,
-      client_id: process.env.CLIENT_ID,
-      client_secret: process.env.CLIENT_SECRET,
-    }), {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    });
+    const response = await axios.post(
+      'https://www.bling.com.br/Api/v3/oauth/token',
+      data,
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }
+    );
 
     accessToken = response.data.access_token;
     console.log("Token recebido:", accessToken);
