@@ -8,13 +8,20 @@ app.use(express.json());
 
 let accessToken = null;
 
+// 👉 Rota para iniciar autenticação com Bling
 app.get('/autenticar', (req, res) => {
-  const authUrl = `https://www.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}`;
+  const authUrl = `https://www.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&state=blingwix123`;
   res.redirect(authUrl);
 });
 
+// 👉 Rota de callback para receber o código e trocar por token
 app.get('/callback', async (req, res) => {
   const code = req.query.code;
+
+  if (!code) {
+    console.error("Código ausente na callback:", req.query);
+    return res.status(400).send("Erro: Código ausente na URL de callback.");
+  }
 
   const basicAuth = Buffer.from(`${process.env.CLIENT_ID}:${process.env.CLIENT_SECRET}`).toString('base64');
 
@@ -37,14 +44,15 @@ app.get('/callback', async (req, res) => {
     );
 
     accessToken = response.data.access_token;
-    console.log("Token recebido:", accessToken);
+    console.log("✅ Token recebido:", accessToken);
     res.send("✅ Token salvo com sucesso!");
   } catch (error) {
-    console.error("Erro ao obter token:", error.response?.data || error.message);
+    console.error("❌ Erro ao obter token:", error.response?.data || error.message);
     res.status(500).send("Erro ao autenticar com Bling.");
   }
 });
 
+// 👉 Rota para buscar produtos no Bling e enviar ao Wix
 app.get('/enviar-wix', async (req, res) => {
   try {
     const produtos = await axios.get('https://www.bling.com.br/Api/v3/produtos', {
@@ -68,12 +76,13 @@ app.get('/enviar-wix', async (req, res) => {
 
     res.json({ enviado: estoque.length, respostaWix: wixResponse.data });
   } catch (err) {
-    console.error("Erro ao buscar/enviar produtos:", err.response?.data || err.message);
+    console.error("❌ Erro ao buscar/enviar produtos:", err.response?.data || err.message);
     res.status(500).send("Erro ao enviar produtos.");
   }
 });
 
+// 👉 Inicia o servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Middleware rodando na porta ${PORT}`);
+  console.log(`🚀 Middleware rodando na porta ${PORT}`);
 });
