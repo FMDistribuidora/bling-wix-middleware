@@ -55,7 +55,7 @@ app.get('/callback', async (req, res) => {
 // 👉 Rota para buscar produtos no Bling e enviar ao Wix
 app.get('/enviar-wix', async (req, res) => {
   try {
-    const produtos = await axios.get('https://www.bling.com.br/Api/v3/produtos', {
+    const produtos = await axios.get('https://www.bling.com.br/api/v3/produtos', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/json'
