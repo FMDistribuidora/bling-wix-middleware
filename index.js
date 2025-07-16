@@ -10,7 +10,7 @@ let accessToken = null;
 
 // 👉 Rota para iniciar autenticação com Bling
 app.get('/autenticar', (req, res) => {
-  const authUrl = `https://www.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&state=blingwix123`;
+  const authUrl = `https://www.bling.com.br/api/v3/oauth/authorize?response_type=code&client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&state=blingwix123`;
   res.redirect(authUrl);
 });
 
@@ -33,7 +33,7 @@ app.get('/callback', async (req, res) => {
 
   try {
     const response = await axios.post(
-      'https://www.bling.com.br/Api/v3/oauth/token',
+      'https://www.bling.com.br/api/v3/oauth/token',
       data,
       {
         headers: {
