@@ -16,12 +16,12 @@ app.get('/autenticar', (req, res) => {
 app.get('/callback', async (req, res) => {
   const code = req.query.code;
 
+  const basicAuth = Buffer.from(`${process.env.CLIENT_ID}:${process.env.CLIENT_SECRET}`).toString('base64');
+
   const data = qs.stringify({
     grant_type: 'authorization_code',
     code,
-    redirect_uri: process.env.REDIRECT_URI,
-    client_id: process.env.CLIENT_ID,
-    client_secret: process.env.CLIENT_SECRET
+    redirect_uri: process.env.REDIRECT_URI
   });
 
   try {
@@ -30,7 +30,8 @@ app.get('/callback', async (req, res) => {
       data,
       {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Basic ${basicAuth}`
         }
       }
     );
