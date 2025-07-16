@@ -8,10 +8,8 @@ app.use(express.json());
 
 let accessToken = null;
 
-app.get('/autenticar', (req, res) => {
-  const state = 'bling_wix_state';
-  const authUrl = `https://www.bling.com.br/api/v3/oauth/authorize?response_type=code&client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&state=${state}`;
-  res.redirect(authUrl);
+const authUrl = `https://www.bling.com.br/api/v3/oauth/authorize?response_type=code&client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&state=bling_wix_state`;
+res.redirect(authUrl);
 });
 
 app.get('/callback', async (req, res) => {
