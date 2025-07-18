@@ -11,6 +11,7 @@ let accessToken = null;
 // 🔐 ROTA DE AUTENTICAÇÃO
 app.get('/autenticar', (req, res) => {
   const authUrl = `https://www.bling.com.br/api/v3/oauth/authorize?response_type=code&client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&state=123`;
+  console.log('🔑 Auth URL:', authUrl);
   res.redirect(authUrl);
 });
 
