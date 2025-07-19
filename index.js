@@ -11,18 +11,16 @@ let accessToken = null;
 // 🔐 ROTA DE AUTENTICAÇÃO
 app.get('/autenticar', (req, res) => {
   const params = new URLSearchParams({
-  response_type: 'code',
-  client_id:      process.env.CLIENT_ID,
-  redirect_uri:   process.env.REDIRECT_URI,
-  state:          'bling_wix_state'
-}).toString();
+    response_type: 'code',
+    client_id: process.env.CLIENT_ID,
+    redirect_uri: process.env.REDIRECT_URI,
+    state: 'bling_wix_state'
+  }).toString();
 
-const authUrl = `https://www.bling.com.br/api/v3/oauth/authorize?${params}`;
-console.log('🔑 Auth URL:', authUrl);
-res.redirect(authUrl);
-
-  console.log('🔑 Auth URL:', authUrl);
-  res.redirect(authUrl);
+  const authUrl = `https://www.bling.com.br/api/v3/oauth/authorize?${params}`;
+  
+  console.log('🔑 Auth URL:', authUrl); // Apenas um console
+  res.redirect(authUrl);                // Apenas um redirect
 });
 
 // 🔁 CALLBACK
