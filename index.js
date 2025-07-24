@@ -17,7 +17,7 @@ app.get('/autenticar', (req, res) => {
     state: 'bling_wix_state'
   }).toString();
 
-  const authUrl = `https://www.bling.com.br/api/v3/oauth/authorize?${params}`;
+  const authUrl = `https://www.bling.com.br/Api/v3/oauth/authorize?${params}`;
   
   console.log('🔑 Auth URL:', authUrl); // Apenas um console
   res.redirect(authUrl);                // Apenas um redirect
