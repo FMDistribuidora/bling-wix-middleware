@@ -39,7 +39,7 @@ app.get('/callback', async (req, res) => {
   });
 
   try {
-    const response = await axios.post('https://www.bling.com.br/api/v3/oauth/token', data, {
+    const response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', data, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Authorization': `Basic ${basicAuth}`
