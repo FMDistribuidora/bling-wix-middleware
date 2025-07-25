@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
@@ -55,15 +54,15 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-// 🔁 ENVIA PARA WIX
+// 🚚 ENVIA PARA O WIX
 app.get('/enviar-wix', async (req, res) => {
   if (!accessToken) {
     return res.status(401).send("Token não autenticado. Acesse /autenticar primeiro");
   }
 
-  console.log('📌 Token usado:', accessToken);
-
   try {
+    console.log('📌 Token usado:', accessToken);
+
     const produtos = await axios.get('https://api.bling.com/Api/v3/produtos', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -71,7 +70,16 @@ app.get('/enviar-wix', async (req, res) => {
       }
     });
 
-    const estoque = produtos.data.data
+    console.log("📦 Dados recebidos do Bling:", produtos.data);
+
+    const dadosRecebidos = produtos.data?.data;
+
+    if (!Array.isArray(dadosRecebidos)) {
+      console.error("❌ Estrutura inesperada da resposta do Bling:", produtos.data);
+      return res.status(500).send("Resposta inesperada da API do Bling.");
+    }
+
+    const estoque = dadosRecebidos
       .filter(p => Number(p.estoqueAtual || 0) > 0)
       .map(p => ({
         codigo: p.codigo,
@@ -84,14 +92,13 @@ app.get('/enviar-wix', async (req, res) => {
     });
 
     res.json({ enviado: estoque.length, respostaWix: wixResponse.data });
-
   } catch (err) {
     console.error("❌ Erro ao buscar/enviar produtos:", err.response?.data || err.message);
     res.status(500).send("Erro ao enviar produtos.");
   }
 });
 
-// PORTA
+// 🚀 INICIALIZA SERVIDOR
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Middleware rodando na porta ${PORT}`);
