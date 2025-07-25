@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
@@ -18,9 +19,8 @@ app.get('/autenticar', (req, res) => {
   }).toString();
 
   const authUrl = `https://www.bling.com.br/Api/v3/oauth/authorize?${params}`;
-  
-  console.log('🔑 Auth URL:', authUrl); // Apenas um console
-  res.redirect(authUrl);                // Apenas um redirect
+  console.log('🔑 Auth URL:', authUrl);
+  res.redirect(authUrl);
 });
 
 // 🔁 CALLBACK
@@ -61,16 +61,16 @@ app.get('/enviar-wix', async (req, res) => {
     return res.status(401).send("Token não autenticado. Acesse /autenticar primeiro");
   }
 
+  console.log('📌 Token usado:', accessToken);
+
   try {
-    try {
-    console.log('📌 Token usado:', accessToken); // <-- AQUI
-   const produtos = await axios.get('https://api.bling.com.br/Api/v3/produtos', {
-  headers: {
-    Authorization: `Bearer ${accessToken}`,
-    Accept: 'application/json'
-  }
-});
-   
+    const produtos = await axios.get('https://api.bling.com.br/Api/v3/produtos', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json'
+      }
+    });
+
     const estoque = produtos.data.data
       .filter(p => Number(p.estoqueAtual || 0) > 0)
       .map(p => ({
@@ -84,6 +84,7 @@ app.get('/enviar-wix', async (req, res) => {
     });
 
     res.json({ enviado: estoque.length, respostaWix: wixResponse.data });
+
   } catch (err) {
     console.error("❌ Erro ao buscar/enviar produtos:", err.response?.data || err.message);
     res.status(500).send("Erro ao enviar produtos.");
