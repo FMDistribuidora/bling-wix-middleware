@@ -64,7 +64,7 @@ app.get('/enviar-wix', async (req, res) => {
   console.log('📌 Token usado:', accessToken);
 
   try {
-    const produtos = await axios.get('https://api.bling.com.br/Api/v3/produtos', {
+    const produtos = await axios.get('https://api.bling.com/Api/v3/produtos', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/json'
