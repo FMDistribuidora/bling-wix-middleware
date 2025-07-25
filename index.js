@@ -18,7 +18,7 @@ app.get('/autenticar', (req, res) => {
     state: 'bling_wix_state'
   }).toString();
 
-  const authUrl = `https://www.bling.com.br/Api/v3/oauth/authorize?${params}`;
+  const authUrl = `https://www.bling.com.br/api/v3/oauth/authorize?${params}`;
   console.log('🔑 Auth URL:', authUrl);
   res.redirect(authUrl);
 });
@@ -39,7 +39,7 @@ app.get('/callback', async (req, res) => {
   });
 
   try {
-    const response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', data, {
+    const response = await axios.post('https://www.bling.com.br/api/v3/oauth/token', data, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Authorization': `Basic ${basicAuth}`
@@ -64,7 +64,7 @@ app.get('/enviar-wix', async (req, res) => {
   console.log('📌 Token usado:', accessToken);
 
   try {
-    const produtos = await axios.get('https://api.bling.com.br/Api/v3/produtos', {
+    const produtos = await axios.get('https://api.bling.com.br/api/v3/produtos', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/json'
