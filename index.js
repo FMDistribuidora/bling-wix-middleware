@@ -7,6 +7,7 @@ const app = express();
 app.use(express.json());
 
 let accessToken = null;
+let refreshToken = null;
 
 // 🔐 ROTA DE AUTENTICAÇÃO
 app.get('/autenticar', (req, res) => {
@@ -25,10 +26,7 @@ app.get('/autenticar', (req, res) => {
 // 🔁 CALLBACK
 app.get('/callback', async (req, res) => {
   const code = req.query.code;
-
-  if (!code) {
-    return res.status(400).send('Erro: código não encontrado na URL de callback.');
-  }
+  if (!code) return res.status(400).send('Erro: código não encontrado na URL de callback.');
 
   const basicAuth = Buffer.from(`${process.env.CLIENT_ID}:${process.env.CLIENT_SECRET}`).toString('base64');
   const data = qs.stringify({
@@ -46,6 +44,7 @@ app.get('/callback', async (req, res) => {
     });
 
     accessToken = response.data.access_token;
+    refreshToken = response.data.refresh_token;
     console.log("✅ Token recebido:", accessToken);
     res.send("✅ Token salvo com sucesso!");
   } catch (error) {
@@ -54,24 +53,42 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-// 🔁 ENVIA PARA WIX
-app.get('/enviar-wix', async (req, res) => {
-  if (!accessToken) {
-    return res.status(401).send("Token não autenticado. Acesse /autenticar primeiro");
-  }
+// 🔁 FUNÇÃO PARA REFRESH
+async function refreshAccessToken() {
+  const basicAuth = Buffer.from(`${process.env.CLIENT_ID}:${process.env.CLIENT_SECRET}`).toString('base64');
+  const data = qs.stringify({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken
+  });
 
   try {
-    console.log('📌 Token usado:', accessToken);
+    const response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', data, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${basicAuth}`
+      }
+    });
 
-const produtos = await axios.get('https://api.bling.com.br/Api/v3/produtos?limit=50&offset=0', {
-  headers: {
-    Authorization: `Bearer ${accessToken}`,
-    Accept: 'application/json',
-    'User-Agent': 'bling-wix-middleware'
+    accessToken = response.data.access_token;
+    refreshToken = response.data.refresh_token;
+    console.log("🔁 Token atualizado com sucesso:", accessToken);
+  } catch (error) {
+    console.error("❌ Erro ao atualizar token:", error.response?.data || error.message);
   }
-});
+}
 
-    console.log("📦 Dados recebidos do Bling:", produtos.data);
+// 🔁 ENVIA PARA WIX
+app.get('/enviar-wix', async (req, res) => {
+  if (!accessToken) return res.status(401).send("Token não autenticado. Acesse /autenticar primeiro");
+
+  try {
+    const produtos = await axios.get('https://api.bling.com.br/Api/v3/produtos?limit=50&offset=0', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+        'User-Agent': 'bling-wix-middleware'
+      }
+    });
 
     if (!produtos.data || !Array.isArray(produtos.data.data)) {
       console.error("❌ Estrutura inesperada da resposta do Bling:", produtos.data);
@@ -92,6 +109,12 @@ const produtos = await axios.get('https://api.bling.com.br/Api/v3/produtos?limit
 
     res.json({ enviado: estoque.length, respostaWix: wixResponse.data });
   } catch (err) {
+    if (err.response?.status === 401) {
+      console.warn("⚠️ Token expirado. Tentando refresh...");
+      await refreshAccessToken();
+      return res.redirect('/enviar-wix');
+    }
+
     console.error("❌ Erro ao buscar/enviar produtos:", err.response?.status, err.response?.data || err.message);
     res.status(500).send("Erro ao enviar produtos.");
   }
@@ -101,6 +124,5 @@ const produtos = await axios.get('https://api.bling.com.br/Api/v3/produtos?limit
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Middleware rodando na porta ${PORT}`);
-  console.log("==> Your service is live 🎉");
-  console.log("==> Available at your primary URL https://bling-wix-middleware.onrender.com");
+  console.log("==> https://bling-wix-middleware.onrender.com");
 });
