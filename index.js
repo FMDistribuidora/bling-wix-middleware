@@ -85,7 +85,7 @@ app.get('/enviar-wix', async (req, res) => {
     console.log('📌 Token usado:', accessToken);
 
     // ✅ Novo endpoint correto para API v3
-    const produtos = await axios.get('https://www.bling.com.br/Api/v3/categorias/produtos', {
+    const produtos = await axios.get('https://www.bling.com.br/Api/v3/produtos?limit=50&offset=0', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/json',
