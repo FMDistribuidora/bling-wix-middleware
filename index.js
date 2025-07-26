@@ -93,7 +93,7 @@ app.get('/enviar-wix', async (req, res) => {
       }
     });
 
-    console.log("📦 Dados recebidos do Bling:", produtos.data);
+    console.log("📦 Dados brutos recebidos do Bling:", produtos.data.data);
 
     // ✅ Validação da estrutura da resposta
     if (!produtos.data || !Array.isArray(produtos.data.data)) {
