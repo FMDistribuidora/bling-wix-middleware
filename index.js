@@ -115,7 +115,15 @@ app.get('/enviar-wix', async (req, res) => {
       return res.redirect('/enviar-wix');
     }
 
-    console.error("❌ Erro ao buscar/enviar produtos:", err.response?.status, err.response?.data || err.message);
+    console.error("❌ Erro ao buscar/enviar produtos:");
+if (err.response) {
+  console.error("📡 Status:", err.response.status);
+  console.error("📨 Data:", JSON.stringify(err.response.data, null, 2));
+  console.error("🧾 Headers:", err.response.headers);
+} else {
+  console.error("❌ Erro genérico:", err.message);
+}
+
     res.status(500).send("Erro ao enviar produtos.");
   }
 });
