@@ -102,13 +102,13 @@ app.get('/enviar-wix', async (req, res) => {
     }
 
     // ✅ Filtro de produtos com estoque positivo
-    const estoque = produtos.data.data
-      .filter(p => Number(p.estoqueAtual || 0) > 0)
-      .map(p => ({
-        codigo: p.codigo,
-        descricao: p.descricao,
-        estoque: p.estoqueAtual
-      }));
+const estoque = produtos.data.data
+  .filter(p => Number(p.estoque?.saldoVirtualTotal || 0) > 0)
+  .map(p => ({
+    codigo: p.codigo,
+    descricao: p.nome,
+    estoque: p.estoque.saldoVirtualTotal
+  }));
 
     // ✅ Verificação entra AQUI
 if (estoque.length === 0) {
