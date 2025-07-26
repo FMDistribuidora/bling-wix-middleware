@@ -110,6 +110,12 @@ app.get('/enviar-wix', async (req, res) => {
         estoque: p.estoqueAtual
       }));
 
+    // ✅ Verificação entra AQUI
+if (estoque.length === 0) {
+  console.log("🚫 Nenhum produto com estoque positivo encontrado. Nada enviado ao Wix.");
+  return res.status(200).send("Nenhum produto com estoque positivo encontrado.");
+}
+  
     console.log("📤 Enviando para o Wix:", estoque);
 
 try {
