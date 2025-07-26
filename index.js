@@ -82,15 +82,26 @@ app.get('/enviar-wix', async (req, res) => {
   if (!accessToken) return res.status(401).send("Token não autenticado. Acesse /autenticar primeiro");
 
   try {
- const produtos = await axios.get('https://www.bling.com.br/Api/v3/categorias/produtos', {
-  headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' }
-});
+    console.log('📌 Token usado:', accessToken);
 
+    // ✅ Novo endpoint correto para API v3
+    const produtos = await axios.get('https://www.bling.com.br/Api/v3/categorias/produtos', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+        'User-Agent': 'bling-wix-middleware'
+      }
+    });
+
+    console.log("📦 Dados recebidos do Bling:", produtos.data);
+
+    // ✅ Validação da estrutura da resposta
     if (!produtos.data || !Array.isArray(produtos.data.data)) {
       console.error("❌ Estrutura inesperada da resposta do Bling:", produtos.data);
       return res.status(500).send("Erro: estrutura inesperada da resposta do Bling.");
     }
 
+    // ✅ Filtro de produtos com estoque positivo
     const estoque = produtos.data.data
       .filter(p => Number(p.estoqueAtual || 0) > 0)
       .map(p => ({
@@ -99,27 +110,14 @@ app.get('/enviar-wix', async (req, res) => {
         estoque: p.estoqueAtual
       }));
 
+    // ✅ Envia para Wix
     const wixResponse = await axios.post(process.env.WIX_ENDPOINT, estoque, {
       headers: { 'Content-Type': 'application/json' }
     });
 
     res.json({ enviado: estoque.length, respostaWix: wixResponse.data });
   } catch (err) {
-    if (err.response?.status === 401) {
-      console.warn("⚠️ Token expirado. Tentando refresh...");
-      await refreshAccessToken();
-      return res.redirect('/enviar-wix');
-    }
-
-    console.error("❌ Erro ao buscar/enviar produtos:");
-if (err.response) {
-  console.error("📡 Status:", err.response.status);
-  console.error("📨 Data:", JSON.stringify(err.response.data, null, 2));
-  console.error("🧾 Headers:", err.response.headers);
-} else {
-  console.error("❌ Erro genérico:", err.message);
-}
-
+    console.error("❌ Erro ao buscar/enviar produtos:", err.response?.status, err.response?.data || err.message);
     res.status(500).send("Erro ao enviar produtos.");
   }
 });
