@@ -110,13 +110,22 @@ app.get('/enviar-wix', async (req, res) => {
         estoque: p.estoqueAtual
       }));
 
-    // ✅ Envia para Wix
-    const wixResponse = await axios.post(process.env.WIX_ENDPOINT, estoque, {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    console.log("📤 Enviando para o Wix:", estoque);
 
-    res.json({ enviado: estoque.length, respostaWix: wixResponse.data });
-  } catch (err) {
+try {
+  const response = await axios.post(
+    'https://www.fmpapeisdeparede.com.br/_functions/receberProdutos',
+    estoque
+  );
+  console.log("✅ Resposta do Wix:", response.data);
+  res.json({ enviado: estoque.length, respostaWix: response.data });
+} catch (erro) {
+  console.error("❌ Erro ao enviar para o Wix:", erro.response?.data || erro.message);
+  res.status(500).send("Erro ao enviar produtos.");
+  return;
+}
+    
+} catch (err) {
     console.error("❌ Erro ao buscar/enviar produtos:", err.response?.status, err.response?.data || err.message);
     res.status(500).send("Erro ao enviar produtos.");
   }
