@@ -82,13 +82,13 @@ app.get('/enviar-wix', async (req, res) => {
   if (!accessToken) return res.status(401).send("Token não autenticado. Acesse /autenticar primeiro");
 
   try {
-    const produtos = await axios.get('https://api.bling.com/Api/v3/produtos?limit=50&offset=0', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-        'User-Agent': 'bling-wix-middleware'
-      }
-    });
+  const produtos = await axios.get('https://www.bling.com.br/Api/v3/produtos?limit=50&offset=0', {
+  headers: {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: 'application/json',
+    'User-Agent': 'bling-wix-middleware'
+  }
+});
 
     if (!produtos.data || !Array.isArray(produtos.data.data)) {
       console.error("❌ Estrutura inesperada da resposta do Bling:", produtos.data);
