@@ -119,10 +119,8 @@ if (estoque.length === 0) {
     console.log("📤 Enviando para o Wix:", estoque);
 
 try {
-  const response = await axios.post(
-    'https://www.fmpapeisdeparede.com.br/_functions/receberProdutos',
-    estoque
-  );
+  await axios.post('https://www.fmpapeisdeparede.com.br/_functions/salvarEstoque', estoque);
+
   console.log("✅ Resposta do Wix:", response.data);
   res.json({ enviado: estoque.length, respostaWix: response.data });
 } catch (erro) {
