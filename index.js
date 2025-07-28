@@ -168,3 +168,4 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Middleware rodando na porta ${PORT}`);
   console.log("==> https://bling-wix-middleware.onrender.com");
+});
