@@ -84,7 +84,6 @@ app.get('/enviar-wix', async (req, res) => {
   try {
     console.log('📌 Token usado:', accessToken);
 
-    // ✅ Novo endpoint correto para API v3
     const produtos = await axios.get('https://www.bling.com.br/Api/v3/produtos?limit=50&offset=0', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -95,43 +94,72 @@ app.get('/enviar-wix', async (req, res) => {
 
     console.log("📦 Dados brutos recebidos do Bling:", produtos.data.data);
 
-    // ✅ Validação da estrutura da resposta
     if (!produtos.data || !Array.isArray(produtos.data.data)) {
       console.error("❌ Estrutura inesperada da resposta do Bling:", produtos.data);
       return res.status(500).send("Erro: estrutura inesperada da resposta do Bling.");
     }
 
-    // ✅ Filtro de produtos com estoque positivo
-const estoque = produtos.data.data
-  .filter(p => Number(p.estoque?.saldoVirtualTotal || 0) > 0)
-  .map(p => ({
-    codigo: p.codigo,
-    descricao: p.nome,
-    estoque: p.estoque.saldoVirtualTotal
-  }));
+    const estoque = produtos.data.data
+      .filter(p => Number(p.estoque?.saldoVirtualTotal || 0) > 0)
+      .map(p => ({
+        codigo: p.codigo,
+        descricao: p.nome,
+        estoque: p.estoque.saldoVirtualTotal
+      }));
 
-    // ✅ Verificação entra AQUI
-if (estoque.length === 0) {
-  console.log("🚫 Nenhum produto com estoque positivo encontrado. Nada enviado ao Wix.");
-  return res.status(200).send("Nenhum produto com estoque positivo encontrado.");
-}
-  
+    if (estoque.length === 0) {
+      console.log("🚫 Nenhum produto com estoque positivo encontrado. Nada enviado ao Wix.");
+      return res.status(200).send("Nenhum produto com estoque positivo encontrado.");
+    }
+
     console.log("📤 Enviando para o Wix:", estoque);
 
-try {
-  const response = await axios.post('https://www.fmpapeisdeparede.com.br/_functions/salvarEstoque', estoque);
+    try {
+      const response = await axios.post('https://www.fmpapeisdeparede.com.br/_functions/salvarEstoque', estoque);
 
-  console.log("✅ Resposta do Wix:", response.data);
-  res.json({ enviado: estoque.length, respostaWix: response.data });
-} catch (erro) {
-  console.error("❌ Erro ao enviar para o Wix:", erro.response?.data || erro.message);
-  res.status(500).send("Erro ao enviar produtos.");
-  return;
-}
-    
-} catch (err) {
+      console.log("✅ Resposta do Wix:", response.data);
+      res.json({ enviado: estoque.length, respostaWix: response.data });
+    } catch (erro) {
+      console.error("❌ Erro ao enviar para o Wix:", erro.response?.data || erro.message);
+      res.status(500).send("Erro ao enviar produtos.");
+      return;
+    }
+
+  } catch (err) {
     console.error("❌ Erro ao buscar/enviar produtos:", err.response?.status, err.response?.data || err.message);
     res.status(500).send("Erro ao enviar produtos.");
+  }
+});
+
+// 🚀 ROTA PÚBLICA PARA CONSULTAR ESTOQUE
+app.get('/estoque', async (req, res) => {
+  if (!accessToken) return res.status(401).send("Token não autenticado. Acesse /autenticar primeiro");
+
+  try {
+    const produtos = await axios.get('https://www.bling.com.br/Api/v3/produtos?limit=50&offset=0', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+        'User-Agent': 'bling-wix-middleware'
+      }
+    });
+
+    if (!produtos.data || !Array.isArray(produtos.data.data)) {
+      return res.status(500).send("Erro: estrutura inesperada da resposta do Bling.");
+    }
+
+    const estoque = produtos.data.data
+      .filter(p => Number(p.estoque?.saldoVirtualTotal || 0) > 0)
+      .map(p => ({
+        codigo: p.codigo,
+        descricao: p.nome,
+        estoque: p.estoque.saldoVirtualTotal
+      }));
+
+    res.json(estoque);
+  } catch (err) {
+    console.error("❌ Erro ao buscar estoque:", err.response?.status, err.response?.data || err.message);
+    res.status(500).send("Erro ao buscar estoque.");
   }
 });
 
@@ -140,4 +168,3 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Middleware rodando na porta ${PORT}`);
   console.log("==> https://bling-wix-middleware.onrender.com");
-});
