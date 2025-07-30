@@ -3,38 +3,17 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const qs = require('qs');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Arquivo para salvar o refresh_token
-const REFRESH_TOKEN_FILE = './refresh_token.txt';
-
 let accessToken = null;
-let refreshToken = null;
-
-// Função para ler o refresh_token salvo
-function lerRefreshToken() {
-    try {
-        return fs.readFileSync(REFRESH_TOKEN_FILE, 'utf8');
-    } catch {
-        return null;
-    }
-}
-
-// Função para salvar o refresh_token
-function salvarRefreshToken(token) {
-    fs.writeFileSync(REFRESH_TOKEN_FILE, token, 'utf8');
-}
+let refreshToken = process.env.REFRESH_TOKEN || null;
 
 // Função para autenticar no Bling
 async function autenticarBling() {
     const basicAuth = Buffer.from(`${process.env.CLIENT_ID}:${process.env.CLIENT_SECRET}`).toString('base64');
     let data;
-
-    // Tenta usar o refresh_token salvo
-    refreshToken = lerRefreshToken();
 
     if (refreshToken) {
         data = qs.stringify({
@@ -42,12 +21,14 @@ async function autenticarBling() {
             refresh_token: refreshToken,
             redirect_uri: process.env.REDIRECT_URI
         });
+        console.log('Usando refresh_token...');
     } else {
         data = qs.stringify({
             grant_type: 'authorization_code',
             code: process.env.AUTH_CODE,
             redirect_uri: process.env.REDIRECT_URI
         });
+        console.log('Usando AUTH_CODE...');
     }
 
     const response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', data, {
@@ -60,8 +41,9 @@ async function autenticarBling() {
     accessToken = response.data.access_token;
     refreshToken = response.data.refresh_token;
 
-    // Salva o novo refresh_token para uso futuro
-    salvarRefreshToken(refreshToken);
+    // Mostra o novo refresh_token no log para você copiar e colar no Render
+    console.log('Novo refresh_token:', refreshToken);
+    console.log('ATENÇÃO: Copie este refresh_token e atualize a variável REFRESH_TOKEN no Render. Depois, remova o AUTH_CODE.');
 }
 
 // Função para buscar todos os produtos do Bling
