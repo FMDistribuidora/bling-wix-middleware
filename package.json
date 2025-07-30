@@ -1,6 +1,7 @@
 {
-  "name": "bling-wix-middleware",
+  "name": "bling-wix-sync-api",
   "version": "1.0.0",
+  "description": "API para sincronização automática de estoque do Bling para o Wix",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
