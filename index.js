@@ -77,29 +77,49 @@ async function refreshAccessToken() {
   }
 }
 
-// 🔁 ENVIA PARA WIX
+// 🔁 ENVIA PARA WIX (com paginação)
 app.get('/enviar-wix', async (req, res) => {
   if (!accessToken) return res.status(401).send("Token não autenticado. Acesse /autenticar primeiro");
 
   try {
     console.log('📌 Token usado:', accessToken);
 
-    const produtos = await axios.get('https://www.bling.com.br/Api/v3/produtos?limit=50&offset=0', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-        'User-Agent': 'bling-wix-middleware'
+    let todosProdutos = [];
+    let offset = 0;
+    const limit = 50;
+    let maisProdutos = true;
+
+    // Paginação para buscar todos os produtos
+    while (maisProdutos) {
+      const produtosResp = await axios.get(
+        `https://www.bling.com.br/Api/v3/produtos?limit=${limit}&offset=${offset}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: 'application/json',
+            'User-Agent': 'bling-wix-middleware'
+          }
+        }
+      );
+
+      const produtos = produtosResp.data.data;
+      if (!produtos || !Array.isArray(produtos)) {
+        console.error("❌ Estrutura inesperada da resposta do Bling:", produtosResp.data);
+        return res.status(500).send("Erro: estrutura inesperada da resposta do Bling.");
       }
-    });
 
-    console.log("📦 Dados brutos recebidos do Bling:", produtos.data.data);
+      todosProdutos = todosProdutos.concat(produtos);
 
-    if (!produtos.data || !Array.isArray(produtos.data.data)) {
-      console.error("❌ Estrutura inesperada da resposta do Bling:", produtos.data);
-      return res.status(500).send("Erro: estrutura inesperada da resposta do Bling.");
+      if (produtos.length < limit) {
+        maisProdutos = false;
+      } else {
+        offset += limit;
+      }
     }
 
-    const estoque = produtos.data.data
+    console.log("📦 Todos os produtos recebidos do Bling:", todosProdutos.length);
+
+    const estoque = todosProdutos
       .filter(p => Number(p.estoque?.saldoVirtualTotal || 0) > 0)
       .map(p => ({
         codigo: p.codigo,
@@ -112,7 +132,7 @@ app.get('/enviar-wix', async (req, res) => {
       return res.status(200).send("Nenhum produto com estoque positivo encontrado.");
     }
 
-    console.log("📤 Enviando para o Wix:", estoque);
+    console.log("📤 Enviando para o Wix:", estoque.length);
 
     try {
       const response = await axios.post('https://www.fmpapeisdeparede.com.br/_functions/salvarEstoque', estoque);
