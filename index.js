@@ -9,6 +9,11 @@ app.use(express.json());
 let accessToken = null;
 let refreshToken = null;
 
+// Função utilitária para aguardar o tempo especificado (em ms)
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 // 🔐 ROTA DE AUTENTICAÇÃO
 app.get('/autenticar', (req, res) => {
   const params = new URLSearchParams({
@@ -77,7 +82,7 @@ async function refreshAccessToken() {
   }
 }
 
-// 🔁 ENVIA PARA WIX (com paginação)
+// 🔁 ENVIA PARA WIX (com paginação e delay)
 app.get('/enviar-wix', async (req, res) => {
   if (!accessToken) return res.status(401).send("Token não autenticado. Acesse /autenticar primeiro");
 
@@ -89,7 +94,7 @@ app.get('/enviar-wix', async (req, res) => {
     const limit = 50;
     let maisProdutos = true;
 
-    // Paginação para buscar todos os produtos
+    // Paginação para buscar todos os produtos, respeitando o limite de requisições
     while (maisProdutos) {
       const produtosResp = await axios.get(
         `https://www.bling.com.br/Api/v3/produtos?limit=${limit}&offset=${offset}`,
@@ -114,6 +119,7 @@ app.get('/enviar-wix', async (req, res) => {
         maisProdutos = false;
       } else {
         offset += limit;
+        await sleep(400); // Aguarda 400ms antes da próxima requisição
       }
     }
 
