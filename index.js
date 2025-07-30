@@ -94,7 +94,6 @@ app.get('/enviar-wix', async (req, res) => {
     const limit = 50;
     let maisProdutos = true;
 
-    // Paginação para buscar todos os produtos, respeitando o limite de requisições
     while (maisProdutos) {
       const produtosResp = await axios.get(
         `https://www.bling.com.br/Api/v3/produtos?limit=${limit}&offset=${offset}`,
@@ -123,8 +122,7 @@ app.get('/enviar-wix', async (req, res) => {
       }
     }
 
-    console.log("📦 Todos os produtos recebidos do Bling:", todosProdutos.length);
-
+    // Filtra apenas produtos com estoque > 0
     const estoque = todosProdutos
       .filter(p => Number(p.estoque?.saldoVirtualTotal || 0) > 0)
       .map(p => ({
@@ -134,8 +132,8 @@ app.get('/enviar-wix', async (req, res) => {
       }));
 
     if (estoque.length === 0) {
-      console.log("🚫 Nenhum produto com estoque positivo encontrado. Nada enviado ao Wix.");
-      return res.status(200).send("Nenhum produto com estoque positivo encontrado.");
+      console.log("🚫 Nenhum produto com estoque positivo encontrado.");
+      return res.json({ mensagem: "#mensagemNenhumProduto" });
     }
 
     console.log("📤 Enviando para o Wix:", estoque.length);
@@ -162,25 +160,50 @@ app.get('/estoque', async (req, res) => {
   if (!accessToken) return res.status(401).send("Token não autenticado. Acesse /autenticar primeiro");
 
   try {
-    const produtos = await axios.get('https://www.bling.com.br/Api/v3/produtos?limit=50&offset=0', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-        'User-Agent': 'bling-wix-middleware'
-      }
-    });
+    let todosProdutos = [];
+    let offset = 0;
+    const limit = 50;
+    let maisProdutos = true;
 
-    if (!produtos.data || !Array.isArray(produtos.data.data)) {
-      return res.status(500).send("Erro: estrutura inesperada da resposta do Bling.");
+    while (maisProdutos) {
+      const produtosResp = await axios.get(
+        `https://www.bling.com.br/Api/v3/produtos?limit=${limit}&offset=${offset}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: 'application/json',
+            'User-Agent': 'bling-wix-middleware'
+          }
+        }
+      );
+
+      const produtos = produtosResp.data.data;
+      if (!produtos || !Array.isArray(produtos)) {
+        return res.status(500).send("Erro: estrutura inesperada da resposta do Bling.");
+      }
+
+      todosProdutos = todosProdutos.concat(produtos);
+
+      if (produtos.length < limit) {
+        maisProdutos = false;
+      } else {
+        offset += limit;
+        await sleep(400);
+      }
     }
 
-    const estoque = produtos.data.data
+    // Filtra apenas produtos com estoque > 0
+    const estoque = todosProdutos
       .filter(p => Number(p.estoque?.saldoVirtualTotal || 0) > 0)
       .map(p => ({
         codigo: p.codigo,
         descricao: p.nome,
         estoque: p.estoque.saldoVirtualTotal
       }));
+
+    if (estoque.length === 0) {
+      return res.json({ mensagem: "#mensagemNenhumProduto" });
+    }
 
     res.json(estoque);
   } catch (err) {
