@@ -3,21 +3,52 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const qs = require('qs');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Funções de autenticação e sincronização (igual ao script anterior)
+// Arquivo para salvar o refresh_token
+const REFRESH_TOKEN_FILE = './refresh_token.txt';
+
 let accessToken = null;
 let refreshToken = null;
 
+// Função para ler o refresh_token salvo
+function lerRefreshToken() {
+    try {
+        return fs.readFileSync(REFRESH_TOKEN_FILE, 'utf8');
+    } catch {
+        return null;
+    }
+}
+
+// Função para salvar o refresh_token
+function salvarRefreshToken(token) {
+    fs.writeFileSync(REFRESH_TOKEN_FILE, token, 'utf8');
+}
+
+// Função para autenticar no Bling
 async function autenticarBling() {
     const basicAuth = Buffer.from(`${process.env.CLIENT_ID}:${process.env.CLIENT_SECRET}`).toString('base64');
-    const data = qs.stringify({
-        grant_type: 'authorization_code',
-        code: process.env.AUTH_CODE,
-        redirect_uri: process.env.REDIRECT_URI
-    });
+    let data;
+
+    // Tenta usar o refresh_token salvo
+    refreshToken = lerRefreshToken();
+
+    if (refreshToken) {
+        data = qs.stringify({
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken,
+            redirect_uri: process.env.REDIRECT_URI
+        });
+    } else {
+        data = qs.stringify({
+            grant_type: 'authorization_code',
+            code: process.env.AUTH_CODE,
+            redirect_uri: process.env.REDIRECT_URI
+        });
+    }
 
     const response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', data, {
         headers: {
@@ -28,8 +59,12 @@ async function autenticarBling() {
 
     accessToken = response.data.access_token;
     refreshToken = response.data.refresh_token;
+
+    // Salva o novo refresh_token para uso futuro
+    salvarRefreshToken(refreshToken);
 }
 
+// Função para buscar todos os produtos do Bling
 async function buscarProdutosBling() {
     let todosProdutos = [];
     let offset = 0;
@@ -69,9 +104,10 @@ async function buscarProdutosBling() {
         }));
 }
 
+// Função para enviar para o Wix
 async function enviarParaWix(estoque) {
     const response = await axios.post(
-        process.env.WIX_FUNCTION_URL,
+        process.env.WIX_ENDPOINT,
         estoque
     );
     return response.data;
