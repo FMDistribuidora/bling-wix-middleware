@@ -242,12 +242,14 @@ app.get('/', (req, res) => {
             <li><a href="/sync">🔄 Sincronizar com Wix</a></li>
             <li><a href="/auth">🎯 Gerar Novo Token (OAuth)</a></li>
             <li><a href="/gerar-token">⚡ Gerar Token com Código</a></li>
+            <li><a href="/token-atual">📋 Ver Token Atual Completo</a></li>
         </ul>
         
         <h3>📚 Status Atual:</h3>
         <ul>
             <li>Access Token: ${accessToken ? '✅ Ativo' : '❌ Não autenticado'}</li>
             <li>REFRESH_TOKEN: ${REFRESH_TOKEN ? '✅' : '❌'}</li>
+            <li><strong>Token Completo para Render:</strong> <code style="background: #f8f9fa; padding: 4px; border: 1px solid #ddd;">${REFRESH_TOKEN || 'Não disponível'}</code></li>
             <li>Última atualização: ${new Date().toISOString()}</li>
         </ul>
         
@@ -329,6 +331,31 @@ app.get('/gerar-token', async (req, res) => {
             ]
         });
     }
+});
+
+// Endpoint para exibir o token atual completo (para configuração)
+app.get('/token-atual', (req, res) => {
+    if (!REFRESH_TOKEN) {
+        return res.status(404).json({
+            erro: 'Nenhum REFRESH_TOKEN disponível',
+            instrucoes: 'Execute /auth para gerar um novo token'
+        });
+    }
+    
+    res.json({
+        sucesso: true,
+        mensagem: 'Token atual disponível',
+        refresh_token_completo: REFRESH_TOKEN,
+        access_token_disponivel: !!accessToken,
+        instrucoes: [
+            '1. Copie o refresh_token_completo acima',
+            '2. Vá ao Render Dashboard > Environment Variables',
+            '3. Encontre REFRESH_TOKEN e substitua pelo valor acima',
+            '4. Clique Save Changes',
+            '5. Aguarde redeploy automático (~2 minutos)'
+        ],
+        timestamp: new Date().toISOString()
+    });
 });
 
 // Endpoint principal de sincronização
