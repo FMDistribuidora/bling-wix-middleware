@@ -24,45 +24,37 @@ async function autenticarBling() {
     }
 
     console.log('🔄 Usando refresh_token...');
+    console.log('🔍 CLIENT_ID:', CLIENT_ID?.substring(0, 10) + '...');
+    console.log('🔍 REFRESH_TOKEN:', REFRESH_TOKEN?.substring(0, 10) + '...');
     
     try {
-        // Tentar método 1: Basic Auth no header
-        console.log('🔸 Tentativa 1: Basic Auth...');
-        const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
+        // Método específico para Bling API v3
+        const authString = `${CLIENT_ID}:${CLIENT_SECRET}`;
+        const base64Auth = Buffer.from(authString, 'utf8').toString('base64');
         
-        let response;
-        try {
-            response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', 
-                qs.stringify({
-                    grant_type: 'refresh_token',
-                    refresh_token: REFRESH_TOKEN
-                }), 
-                {
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Authorization': `Basic ${credentials}`
-                    }
-                }
-            );
-        } catch (basicAuthError) {
-            console.log('❌ Basic Auth falhou, tentando método 2...');
-            
-            // Método 2: Credenciais no corpo da requisição
-            console.log('🔸 Tentativa 2: Credenciais no corpo...');
-            response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', 
-                qs.stringify({
-                    grant_type: 'refresh_token',
-                    refresh_token: REFRESH_TOKEN,
-                    client_id: CLIENT_ID,
-                    client_secret: CLIENT_SECRET
-                }), 
-                {
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    }
-                }
-            );
-        }
+        console.log('🔸 Tentando autenticação com Bling API v3...');
+        console.log('🔸 Auth String Length:', authString.length);
+        console.log('🔸 Base64 Length:', base64Auth.length);
+        
+        const requestData = {
+            grant_type: 'refresh_token',
+            refresh_token: REFRESH_TOKEN
+        };
+        
+        console.log('🔸 Request Data:', requestData);
+        
+        const response = await axios({
+            method: 'POST',
+            url: 'https://www.bling.com.br/Api/v3/oauth/token',
+            data: qs.stringify(requestData),
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': `Basic ${base64Auth}`,
+                'Accept': 'application/json',
+                'User-Agent': 'Bling-Wix-Integration/1.0'
+            },
+            timeout: 10000
+        });
 
         accessToken = response.data.access_token;
         console.log('✅ Autenticação bem-sucedida!');
@@ -74,7 +66,12 @@ async function autenticarBling() {
         
         return accessToken;
     } catch (error) {
-        console.error('❌ Erro na autenticação:', error.response?.data || error.message);
+        console.error('❌ Erro na autenticação:', {
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            data: error.response?.data,
+            message: error.message
+        });
         throw error;
     }
 }
