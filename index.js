@@ -26,16 +26,18 @@ async function autenticarBling() {
     console.log('🔄 Usando refresh_token...');
     
     try {
+        // Codificar credenciais em Base64 para Basic Auth
+        const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
+        
         const response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', 
             qs.stringify({
                 grant_type: 'refresh_token',
-                refresh_token: REFRESH_TOKEN,
-                client_id: CLIENT_ID,
-                client_secret: CLIENT_SECRET
+                refresh_token: REFRESH_TOKEN
             }), 
             {
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Authorization': `Basic ${credentials}`
                 }
             }
         );
@@ -206,17 +208,19 @@ app.get('/callback', async (req, res) => {
     }
 
     try {
+        // Codificar credenciais em Base64 para Basic Auth
+        const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
+        
         const response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', 
             qs.stringify({
                 grant_type: 'authorization_code',
                 code: code,
-                redirect_uri: REDIRECT_URI,
-                client_id: CLIENT_ID,
-                client_secret: CLIENT_SECRET
+                redirect_uri: REDIRECT_URI
             }), 
             {
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Authorization': `Basic ${credentials}`
                 }
             }
         );
