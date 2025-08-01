@@ -26,21 +26,43 @@ async function autenticarBling() {
     console.log('🔄 Usando refresh_token...');
     
     try {
-        // Codificar credenciais em Base64 para Basic Auth
+        // Tentar método 1: Basic Auth no header
+        console.log('🔸 Tentativa 1: Basic Auth...');
         const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
         
-        const response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', 
-            qs.stringify({
-                grant_type: 'refresh_token',
-                refresh_token: REFRESH_TOKEN
-            }), 
-            {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Authorization': `Basic ${credentials}`
+        let response;
+        try {
+            response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', 
+                qs.stringify({
+                    grant_type: 'refresh_token',
+                    refresh_token: REFRESH_TOKEN
+                }), 
+                {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Authorization': `Basic ${credentials}`
+                    }
                 }
-            }
-        );
+            );
+        } catch (basicAuthError) {
+            console.log('❌ Basic Auth falhou, tentando método 2...');
+            
+            // Método 2: Credenciais no corpo da requisição
+            console.log('🔸 Tentativa 2: Credenciais no corpo...');
+            response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', 
+                qs.stringify({
+                    grant_type: 'refresh_token',
+                    refresh_token: REFRESH_TOKEN,
+                    client_id: CLIENT_ID,
+                    client_secret: CLIENT_SECRET
+                }), 
+                {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                }
+            );
+        }
 
         accessToken = response.data.access_token;
         console.log('✅ Autenticação bem-sucedida!');
