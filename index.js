@@ -45,12 +45,12 @@ async function autenticarBling() {
         
         const response = await axios({
             method: 'POST',
-            url: 'https://www.bling.com.br/Api/v3/oauth/token',
+            url: 'https://api.bling.com.br/Api/v3/oauth/token',
             data: qs.stringify(requestData),
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Authorization': `Basic ${base64Auth}`,
-                'Accept': 'application/json',
+                'Accept': '1.0',
                 'User-Agent': 'Bling-Wix-Integration/1.0'
             },
             timeout: 10000
@@ -83,7 +83,7 @@ async function buscarProdutosBling() {
     }
 
     try {
-        const response = await axios.get('https://www.bling.com.br/Api/v3/produtos', {
+        const response = await axios.get('https://api.bling.com.br/Api/v3/produtos', {
             headers: {
                 'Authorization': `Bearer ${accessToken}`
             },
@@ -320,13 +320,13 @@ app.get('/callback', async (req, res) => {
         
         console.log('📤 Enviando requisição para gerar tokens...');
         
-        const response = await axios.post('https://www.bling.com.br/Api/v3/oauth/token', 
+        const response = await axios.post('https://api.bling.com.br/Api/v3/oauth/token', 
             qs.stringify(requestData), 
             {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                     'Authorization': `Basic ${credentials}`,
-                    'Accept': 'application/json',
+                    'Accept': '1.0',
                     'User-Agent': 'Bling-Wix-Integration/1.0'
                 },
                 timeout: 10000
