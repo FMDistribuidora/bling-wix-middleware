@@ -240,6 +240,7 @@ app.get('/', (req, res) => {
         <ul>
             <li><a href="/autenticar">🔑 Testar Autenticação</a></li>
             <li><a href="/sync">🔄 Sincronizar com Wix</a></li>
+            <li><a href="/testar-wix">🧪 Testar Conectividade Wix</a></li>
             <li><a href="/auth">🎯 Gerar Novo Token (OAuth)</a></li>
             <li><a href="/gerar-token">⚡ Gerar Token com Código</a></li>
             <li><a href="/token-atual">📋 Ver Token Atual Completo</a></li>
@@ -531,6 +532,63 @@ app.get('/enviar-wix', async (req, res) => {
         res.status(500).json({ 
             erro: error.message,
             detalhes: error.response?.data || 'Erro interno'
+        });
+    }
+});
+
+// Endpoint para testar conectividade com Wix
+app.get('/testar-wix', async (req, res) => {
+    try {
+        console.log('🧪 Testando conectividade com Wix...');
+        console.log('🔗 WIX_ENDPOINT:', WIX_ENDPOINT);
+        
+        // Testar com dados mínimos
+        const dadosTeste = [
+            {
+                codigo: 'TESTE-001',
+                descricao: 'Produto de Teste - Conectividade',
+                estoque: 1
+            }
+        ];
+        
+        const response = await axios({
+            method: 'POST',
+            url: WIX_ENDPOINT,
+            data: dadosTeste,
+            headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': 'Bling-Wix-Integration/1.0 (Test)'
+            },
+            timeout: 30000,
+            validateStatus: function (status) {
+                return status < 500; // Aceitar até erro 4xx para debug
+            }
+        });
+        
+        res.json({
+            sucesso: response.status >= 200 && response.status < 300,
+            status: response.status,
+            statusText: response.statusText,
+            wix_endpoint: WIX_ENDPOINT,
+            response_data: response.data,
+            headers: response.headers,
+            dadosEnviados: dadosTeste,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Erro no teste Wix:', error.message);
+        res.status(500).json({
+            erro: error.message,
+            codigo: error.code,
+            wix_endpoint: WIX_ENDPOINT,
+            detalhes: error.response ? {
+                status: error.response.status,
+                statusText: error.response.statusText,
+                data: error.response.data,
+                headers: error.response.headers
+            } : 'Sem resposta do servidor',
+            timestamp: new Date().toISOString()
         });
     }
 });
