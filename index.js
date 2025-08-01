@@ -1,3 +1,4 @@
+// index.js
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
@@ -12,10 +13,53 @@ app.use(express.json());
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI;
-const REFRESH_TOKEN = process.env.REFRESH_TOKEN;
+let REFRESH_TOKEN = process.env.REFRESH_TOKEN; // Usar let para permitir atualização
 const WIX_ENDPOINT = process.env.WIX_ENDPOINT;
 
 let accessToken = null;
+
+// Função para gerar novo refresh_token usando authorization code
+async function gerarNovoRefreshToken(authCode) {
+    console.log('🔄 Gerando novo REFRESH_TOKEN com authorization code...');
+    
+    try {
+        const authString = `${CLIENT_ID}:${CLIENT_SECRET}`;
+        const base64Auth = Buffer.from(authString, 'utf8').toString('base64');
+        
+        const requestData = {
+            grant_type: 'authorization_code',
+            code: authCode,
+            redirect_uri: REDIRECT_URI
+        };
+        
+        const response = await axios({
+            method: 'POST',
+            url: 'https://api.bling.com.br/Api/v3/oauth/token',
+            data: qs.stringify(requestData),
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': `Basic ${base64Auth}`,
+                'Accept': '1.0',
+                'User-Agent': 'Bling-Wix-Integration/1.0'
+            },
+            timeout: 10000
+        });
+
+        accessToken = response.data.access_token;
+        REFRESH_TOKEN = response.data.refresh_token;
+        
+        console.log('✅ Novo REFRESH_TOKEN gerado com sucesso!');
+        console.log(`🔑 Novo REFRESH_TOKEN: ${REFRESH_TOKEN}`);
+        
+        return {
+            access_token: accessToken,
+            refresh_token: REFRESH_TOKEN
+        };
+    } catch (error) {
+        console.error('❌ Erro ao gerar novo refresh token:', error.response?.data);
+        throw error;
+    }
+}
 
 // Função para autenticar com o Bling usando refresh_token
 async function autenticarBling() {
@@ -23,25 +67,20 @@ async function autenticarBling() {
         throw new Error('REFRESH_TOKEN não configurado');
     }
 
-    console.log('🔄 Usando refresh_token...');
-    console.log('🔍 CLIENT_ID:', CLIENT_ID?.substring(0, 10) + '...');
-    console.log('🔍 REFRESH_TOKEN:', REFRESH_TOKEN?.substring(0, 10) + '...');
+    console.log('🔄 Iniciando autenticação com Bling...');
+    console.log('🔑 Token atual (primeiros 20 chars):', REFRESH_TOKEN?.substring(0, 20) + '...');
     
     try {
         // Método específico para Bling API v3
         const authString = `${CLIENT_ID}:${CLIENT_SECRET}`;
         const base64Auth = Buffer.from(authString, 'utf8').toString('base64');
         
-        console.log('🔸 Tentando autenticação com Bling API v3...');
-        console.log('🔸 Auth String Length:', authString.length);
-        console.log('🔸 Base64 Length:', base64Auth.length);
+        console.log('🔸 Preparando request OAuth...');
         
         const requestData = {
             grant_type: 'refresh_token',
             refresh_token: REFRESH_TOKEN
         };
-        
-        console.log('🔸 Request Data:', requestData);
         
         const response = await axios({
             method: 'POST',
@@ -59,9 +98,11 @@ async function autenticarBling() {
         accessToken = response.data.access_token;
         console.log('✅ Autenticação bem-sucedida!');
         
-        // Atualizar refresh_token se fornecido
+        // IMPORTANTE: Atualizar refresh_token se fornecido (Bling sempre fornece um novo)
         if (response.data.refresh_token) {
-            console.log(`🔑 REFRESH_TOKEN: ${response.data.refresh_token}`);
+            REFRESH_TOKEN = response.data.refresh_token; // Atualizar token em memória
+            console.log('🔄 REFRESH_TOKEN atualizado em memória');
+            console.log(`🔑 Novo token (primeiros 20 chars): ${response.data.refresh_token.substring(0, 20)}...`);
         }
         
         return accessToken;
@@ -70,349 +111,429 @@ async function autenticarBling() {
             status: error.response?.status,
             statusText: error.response?.statusText,
             data: error.response?.data,
-            message: error.message
+            url: error.config?.url,
+            method: error.config?.method
         });
+        
+        // Se o token é inválido, dar instruções claras
+        if (error.response?.data?.error?.type === 'invalid_grant') {
+            console.log('🚨 REFRESH_TOKEN inválido! É necessário gerar um novo token.');
+            console.log('🔧 Instruções:');
+            console.log('1. Acesse: /auth para iniciar nova autorização');
+            console.log('2. Autorize a aplicação no Bling');
+            console.log('3. Copie o código retornado');
+            console.log('4. Use o endpoint /callback?code=SEU_CODIGO');
+        }
+        
         throw error;
     }
 }
 
-// Buscar produtos com estoque do Bling
+// Função para buscar produtos do Bling
 async function buscarProdutosBling() {
-    if (!accessToken) {
-        await autenticarBling();
-    }
-
-    try {
-        const response = await axios.get('https://api.bling.com.br/Api/v3/produtos', {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            },
-            params: {
-                limite: 100,
-                pagina: 1
-            }
-        });
-
-        const produtos = response.data.data || [];
-        console.log(`📦 ${produtos.length} produtos encontrados`);
-
-        // Filtrar produtos com estoque > 0
-        const produtosComEstoque = produtos.filter(produto => {
-            const estoque = produto.estoque?.saldoFisico || 0;
-            return estoque > 0;
-        });
-
-        console.log(`✅ ${produtosComEstoque.length} produtos com estoque`);
-        return produtosComEstoque;
-    } catch (error) {
-        console.error('❌ Erro ao buscar produtos:', error.response?.data || error.message);
-        
-        // Se token expirou, tentar renovar
-        if (error.response?.status === 401) {
-            console.log('🔄 Token expirado, renovando...');
-            await autenticarBling();
-            return await buscarProdutosBling();
-        }
-        
-        throw error;
-    }
-}
-
-// Enviar produtos para o Wix
-async function enviarParaWix(produtos) {
-    if (!WIX_ENDPOINT) {
-        throw new Error('WIX_ENDPOINT não configurado');
-    }
-
-    try {
-        const dadosParaEnvio = produtos.map(produto => ({
-            codigo: produto.codigo,
-            nome: produto.nome,
-            preco: produto.preco || 0,
-            estoque: produto.estoque?.saldoFisico || 0,
-            descricao: produto.descricao || '',
-            categoria: produto.categoria?.descricao || 'Geral'
-        }));
-
-        const response = await axios.post(WIX_ENDPOINT, {
-            produtos: dadosParaEnvio
-        }, {
-            timeout: 30000
-        });
-
-        console.log('✅ Produtos enviados para o Wix:', dadosParaEnvio.length);
-        return response.data;
-    } catch (error) {
-        console.error('❌ Erro ao enviar para Wix:', error.response?.data || error.message);
-        throw error;
-    }
-}
-
-// Rotas da API
-app.get('/', (req, res) => {
-    res.send(`
-        <h1>🔄 Bling-Wix Middleware API</h1>
-        <h2>📊 Status: Online</h2>
-        <p><strong>REFRESH_TOKEN:</strong> ${REFRESH_TOKEN ? '✅ Configurado' : '❌ Não configurado'}</p>
-        
-        <h3>🔗 Endpoints:</h3>
-        <ul>
-            <li><a href="/autenticar">🔐 Autenticar Bling</a></li>
-            <li><a href="/enviar-wix">📦 Enviar para Wix</a></li>
-            <li><a href="/auth">🚀 Gerar Novo Token</a></li>
-            <li><a href="/sync">🔄 Sincronizar Estoque</a></li>
-        </ul>
-        
-        <h3>📋 Status dos Endpoints:</h3>
-        <ul>
-            <li>CLIENT_ID: ${CLIENT_ID ? '✅' : '❌'}</li>
-            <li>CLIENT_SECRET: ${CLIENT_SECRET ? '✅' : '❌'}</li>
-            <li>REDIRECT_URI: ${REDIRECT_URI ? '✅' : '❌'}</li>
-            <li>REFRESH_TOKEN: ${REFRESH_TOKEN ? '✅' : '❌'}</li>
-        </ul>
-        
-        <hr>
-        <p><small>v1.0 - FMDistribuidora</small></p>
-    `);
-});
-
-// Endpoint para iniciar processo de autorização
-app.get('/auth', (req, res) => {
-    if (!CLIENT_ID || !REDIRECT_URI) {
-        return res.status(500).send(`
-            <h1>❌ Erro de Configuração</h1>
-            <p>CLIENT_ID ou REDIRECT_URI não configurados.</p>
-            <a href="/">← Voltar</a>
-        `);
-    }
-
-    const authUrl = `https://www.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=bling_wix_state`;
+    console.log('🔍 Buscando produtos no Bling...');
     
-    res.send(`
-        <h1>🔐 Gerar Novo REFRESH_TOKEN</h1>
-        <p>Clique no botão abaixo para autorizar a aplicação no Bling:</p>
-        
-        <div style="margin: 20px 0;">
-            <a href="${authUrl}" 
-               style="background: #007bff; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-               🚀 Autorizar Bling
-            </a>
-        </div>
-        
-        <p><strong>Instruções:</strong></p>
-        <ol>
-            <li>Clique no botão acima</li>
-            <li>Faça login no Bling</li>
-            <li>Autorize a aplicação</li>
-            <li>Você será redirecionado de volta com o novo token</li>
-        </ol>
-        
-        <a href="/">← Voltar ao início</a>
-    `);
-});
+    let todosProdutos = [];
+    let pagina = 1;
+    const limite = 100;
+    let maisProdutos = true;
 
-// Alias para /enviar-wix
-app.get('/sync', async (req, res) => {
-    try {
-        console.log('🚀 Iniciando sincronização via /sync...');
-        
-        const produtos = await buscarProdutosBling();
-        
-        if (produtos.length === 0) {
-            return res.json({ 
-                success: true, 
-                message: 'Nenhum produto com estoque encontrado',
-                produtos: 0 
-            });
-        }
-
-        const resultado = await enviarParaWix(produtos);
-        
-        res.json({ 
-            success: true, 
-            message: 'Sincronização realizada com sucesso!',
-            produtos: produtos.length,
-            resultado 
-        });
-    } catch (error) {
-        console.error('❌ Erro na sincronização:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            erro: error.message 
-        });
-    }
-});
-
-// Endpoint para autenticar com o Bling
-app.get('/autenticar', async (req, res) => {
-    try {
-        const token = await autenticarBling();
-        res.json({ 
-            success: true, 
-            message: 'Autenticação realizada com sucesso!',
-            hasToken: !!token
-        });
-    } catch (error) {
-        res.status(500).json({ 
-            success: false, 
-            erro: error.message 
-        });
-    }
-});
-
-// Endpoint para sincronizar estoque
-app.get('/enviar-wix', async (req, res) => {
-    try {
-        console.log('🚀 Iniciando sincronização...');
-        
-        const produtos = await buscarProdutosBling();
-        
-        if (produtos.length === 0) {
-            return res.json({ 
-                success: true, 
-                message: 'Nenhum produto com estoque encontrado',
-                produtos: 0 
-            });
-        }
-
-        const resultado = await enviarParaWix(produtos);
-        
-        res.json({ 
-            success: true, 
-            message: 'Sincronização realizada com sucesso!',
-            produtos: produtos.length,
-            resultado 
-        });
-    } catch (error) {
-        console.error('❌ Erro na sincronização:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            erro: error.message 
-        });
-    }
-});
-
-// Endpoint para callback do OAuth
-app.get('/callback', async (req, res) => {
-    const { code, state } = req.query;
-    
-    if (!code) {
-        return res.status(400).send(`
-            <h1>❌ Erro de Autorização</h1>
-            <p>Código de autorização não encontrado.</p>
-            <p>Por favor, tente o processo novamente.</p>
-            <a href="/auth">🔄 Tentar Novamente</a> | 
-            <a href="/">🏠 Início</a>
-        `);
-    }
-
-    try {
-        console.log('🔄 Processando callback com código:', code?.substring(0, 10) + '...');
-        
-        // Codificar credenciais em Base64 para Basic Auth
-        const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
-        
-        const requestData = {
-            grant_type: 'authorization_code',
-            code: code,
-            redirect_uri: REDIRECT_URI
-        };
-        
-        console.log('📤 Enviando requisição para gerar tokens...');
-        
-        const response = await axios.post('https://api.bling.com.br/Api/v3/oauth/token', 
-            qs.stringify(requestData), 
-            {
+    while (maisProdutos) {
+        try {
+            console.log(`📄 Buscando página ${pagina}...`);
+            
+            const response = await axios({
+                method: 'GET',
+                url: `https://api.bling.com.br/Api/v3/produtos`,
+                params: {
+                    pagina: pagina,
+                    limite: limite
+                },
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Authorization': `Basic ${credentials}`,
+                    'Authorization': `Bearer ${accessToken}`,
                     'Accept': '1.0',
                     'User-Agent': 'Bling-Wix-Integration/1.0'
                 },
                 timeout: 10000
-            }
-        );
+            });
 
-        const { access_token, refresh_token, expires_in } = response.data;
+            const produtos = response.data.data || [];
+            console.log(`📦 Encontrados ${produtos.length} produtos na página ${pagina}`);
+            
+            if (produtos.length === 0) {
+                maisProdutos = false;
+            } else {
+                todosProdutos = todosProdutos.concat(produtos);
+                
+                if (produtos.length < limite) {
+                    maisProdutos = false;
+                } else {
+                    pagina++;
+                }
+                
+                // Rate limiting - aguardar 400ms entre requests
+                await new Promise(resolve => setTimeout(resolve, 400));
+            }
+        } catch (error) {
+            console.error(`❌ Erro ao buscar página ${pagina}:`, error.response?.data || error.message);
+            maisProdutos = false;
+        }
+    }
+
+    console.log(`📊 Total de produtos encontrados: ${todosProdutos.length}`);
+    
+    // Filtrar apenas produtos com estoque > 0
+    const produtosComEstoque = todosProdutos
+        .filter(produto => {
+            const estoque = Number(produto.estoque?.saldoVirtualTotal || 0);
+            return estoque > 0;
+        })
+        .map(produto => ({
+            codigo: produto.codigo,
+            descricao: produto.nome,
+            estoque: Number(produto.estoque?.saldoVirtualTotal || 0)
+        }));
+
+    console.log(`✅ Produtos com estoque: ${produtosComEstoque.length}`);
+    return produtosComEstoque;
+}
+
+// Função para enviar dados para o Wix
+async function enviarParaWix(produtos) {
+    console.log('📤 Enviando produtos para o Wix...');
+    
+    try {
+        const response = await axios({
+            method: 'POST',
+            url: WIX_ENDPOINT,
+            data: produtos,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000
+        });
         
-        console.log('✅ Tokens gerados com sucesso!');
-        console.log('🔑 Novo REFRESH_TOKEN:', refresh_token);
-        
-        res.send(`
-            <div style="max-width: 800px; margin: 0 auto; padding: 20px; font-family: Arial, sans-serif;">
-                <h1 style="color: #28a745;">✅ Autorização Bem-Sucedida!</h1>
-                
-                <div style="background: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
-                    <h3>🔑 Seu Novo REFRESH_TOKEN:</h3>
-                    <div style="background: #e9ecef; padding: 15px; border-radius: 3px; font-family: monospace; word-break: break-all; border: 1px solid #dee2e6;">
-                        ${refresh_token}
-                    </div>
-                </div>
-                
-                <div style="background: #fff3cd; padding: 15px; border-radius: 5px; border: 1px solid #ffeaa7; margin: 20px 0;">
-                    <h3 style="color: #856404;">⚠️ IMPORTANTE - Próximos Passos:</h3>
-                    <ol style="margin: 10px 0;">
-                        <li><strong>Copie</strong> o REFRESH_TOKEN acima</li>
-                        <li>Vá ao <strong>Render Dashboard</strong></li>
-                        <li>Entre no projeto <strong>bling-wix-middleware</strong></li>
-                        <li>Clique em <strong>"Environment"</strong></li>
-                        <li>Atualize a variável <strong>REFRESH_TOKEN</strong> com o valor acima</li>
-                        <li><strong>Salve</strong> as alterações</li>
-                        <li>Aguarde o <strong>redeploy automático</strong></li>
-                    </ol>
-                </div>
-                
-                <div style="margin: 20px 0;">
-                    <h3>🧪 Testar Após Configurar:</h3>
-                    <a href="/sync" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 3px; margin-right: 10px;">
-                        🔄 Testar Sincronização
-                    </a>
-                    <a href="/autenticar" style="background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 3px;">
-                        🔐 Testar Autenticação
-                    </a>
-                </div>
-                
-                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6;">
-                    <p><small>
-                        <strong>Informações Técnicas:</strong><br>
-                        Access Token Expira em: ${expires_in} segundos<br>
-                        Estado: ${state}<br>
-                        Timestamp: ${new Date().toISOString()}
-                    </small></p>
-                </div>
-                
-                <a href="/" style="color: #6c757d;">← Voltar ao Início</a>
-            </div>
-        `);
+        console.log('✅ Dados enviados para o Wix com sucesso!');
+        return response.data;
     } catch (error) {
-        console.error('❌ Erro no callback:', error.response?.data || error.message);
+        console.error('❌ Erro ao enviar para o Wix:', error.response?.data || error.message);
+        throw error;
+    }
+}
+
+// Página inicial
+app.get('/', (req, res) => {
+    res.send(`
+        <h1>🔗 Bling-Wix Integration API</h1>
+        <h2>✅ Sistema Online</h2>
         
-        res.status(500).send(`
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px; font-family: Arial, sans-serif;">
-                <h1 style="color: #dc3545;">❌ Erro ao Processar Autorização</h1>
-                
-                <div style="background: #f8d7da; padding: 15px; border-radius: 5px; border: 1px solid #f5c6cb; margin: 20px 0;">
-                    <h3>Detalhes do Erro:</h3>
-                    <p><strong>Erro:</strong> ${error.message}</p>
-                    ${error.response?.data ? `<p><strong>Resposta da API:</strong> ${JSON.stringify(error.response.data, null, 2)}</p>` : ''}
+        <h3>📊 Status das Configurações:</h3>
+        <ul>
+            <li><strong>CLIENT_ID:</strong> ${CLIENT_ID ? '✅ Configurado' : '❌ Não configurado'}</li>
+            <li><strong>CLIENT_SECRET:</strong> ${CLIENT_SECRET ? '✅ Configurado' : '❌ Não configurado'}</li>
+            <li><strong>REDIRECT_URI:</strong> ${REDIRECT_URI ? '✅ Configurado' : '❌ Não configurado'}</li>
+            <li><strong>REFRESH_TOKEN:</strong> ${REFRESH_TOKEN ? '✅ Configurado' : '❌ Não configurado'}</li>
+            <li><strong>WIX_ENDPOINT:</strong> ${WIX_ENDPOINT ? '✅ Configurado' : '❌ Não configurado'}</li>
+        </ul>
+        
+        <h3>🔧 Endpoints Disponíveis:</h3>
+        <ul>
+            <li><a href="/autenticar">🔑 Testar Autenticação</a></li>
+            <li><a href="/sync">🔄 Sincronizar com Wix</a></li>
+            <li><a href="/auth">🎯 Gerar Novo Token (OAuth)</a></li>
+            <li><a href="/gerar-token">⚡ Gerar Token com Código</a></li>
+        </ul>
+        
+        <h3>📚 Status Atual:</h3>
+        <ul>
+            <li>Access Token: ${accessToken ? '✅ Ativo' : '❌ Não autenticado'}</li>
+            <li>REFRESH_TOKEN: ${REFRESH_TOKEN ? '✅' : '❌'}</li>
+            <li>Última atualização: ${new Date().toISOString()}</li>
+        </ul>
+        
+        <p><em>🚀 Sistema pronto para sincronização automática</em></p>
+    `);
+});
+
+// Endpoint para testar autenticação
+app.get('/autenticar', async (req, res) => {
+    try {
+        console.log('🔍 Endpoint /autenticar chamado');
+        await autenticarBling();
+        res.json({ 
+            sucesso: true,
+            mensagem: '✅ Autenticação realizada com sucesso!',
+            timestamp: new Date().toISOString(),
+            tokenAtualizado: !!REFRESH_TOKEN
+        });
+    } catch (error) {
+        console.error('❌ Erro no endpoint /autenticar:', error.message);
+        
+        // Se o token é inválido, dar instruções para gerar novo
+        if (error.response?.data?.error?.type === 'invalid_grant') {
+            res.status(401).json({ 
+                erro: 'REFRESH_TOKEN inválido',
+                instrucoes: {
+                    passo1: 'Acesse /auth para nova autorização',
+                    passo2: 'Autorize a aplicação no Bling',
+                    passo3: 'Será redirecionado automaticamente com novo token',
+                    passo4: 'Copie o novo REFRESH_TOKEN e atualize no Render'
+                },
+                timestamp: new Date().toISOString(),
+                linkAutorizacao: '/auth'
+            });
+        } else {
+            res.status(500).json({ 
+                erro: error.message,
+                timestamp: new Date().toISOString()
+            });
+        }
+    }
+});
+
+// Endpoint para gerar novo token com código específico
+app.get('/gerar-token', async (req, res) => {
+    const { code } = req.query;
+    
+    if (!code) {
+        return res.status(400).json({
+            erro: 'Código de autorização necessário',
+            uso: '/gerar-token?code=SEU_CODIGO_AQUI',
+            obterCodigo: '/auth'
+        });
+    }
+    
+    try {
+        const tokens = await gerarNovoRefreshToken(code);
+        res.json({
+            sucesso: true,
+            mensagem: '✅ Novo REFRESH_TOKEN gerado com sucesso!',
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+            instrucoes: [
+                '1. Copie o refresh_token acima',
+                '2. Vá ao Render > Environment Variables',
+                '3. Atualize REFRESH_TOKEN com o novo valor',
+                '4. Salve as alterações para redeploy'
+            ],
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(500).json({
+            erro: error.message,
+            detalhes: error.response?.data,
+            solucoes: [
+                'Verifique se o código não expirou (10 min)',
+                'Gere um novo código em /auth',
+                'Verifique configurações CLIENT_ID/SECRET'
+            ]
+        });
+    }
+});
+
+// Endpoint principal de sincronização
+app.get('/sync', async (req, res) => {
+    try {
+        console.log('🚀 Iniciando sincronização completa...');
+        
+        // 1. Autenticar
+        await autenticarBling();
+        
+        // 2. Buscar produtos
+        const produtos = await buscarProdutosBling();
+        
+        if (produtos.length === 0) {
+            return res.json({ 
+                mensagem: "⚠️ Nenhum produto com estoque positivo encontrado.",
+                produtos: 0,
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        // 3. Enviar para Wix
+        const respostaWix = await enviarParaWix(produtos);
+        
+        res.json({ 
+            sucesso: true,
+            mensagem: '✅ Sincronização completa realizada com sucesso!',
+            produtosSincronizados: produtos.length,
+            respostaWix,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Erro na sincronização:', error.message);
+        res.status(500).json({ 
+            erro: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Endpoint para iniciar autorização OAuth
+app.get('/auth', (req, res) => {
+    const authUrl = `https://api.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=bling_wix_integration`;
+    
+    res.send(`
+        <h1>🔐 Autorização OAuth - Bling</h1>
+        <p>Para configurar a integração, clique no link abaixo para autorizar a aplicação:</p>
+        <a href="${authUrl}" target="_blank" style="
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+        ">🔑 Autorizar no Bling</a>
+        
+        <h3>Instruções:</h3>
+        <ol>
+            <li>Clique no link acima</li>
+            <li>Faça login no Bling</li>
+            <li>Autorize a aplicação</li>
+            <li>Você será redirecionado de volta com o código</li>
+        </ol>
+    `);
+});
+
+// Endpoint para receber callback do OAuth
+app.get('/callback', async (req, res) => {
+    const { code, error, state } = req.query;
+    
+    if (error) {
+        return res.send(`
+            <h2>❌ Erro na autorização</h2>
+            <p>Erro: <strong>${error}</strong></p>
+            <a href="/auth">🔄 Tentar novamente</a>
+        `);
+    }
+    
+    if (code) {
+        try {
+            // Tentar gerar o refresh token automaticamente
+            console.log('🔄 Processando código de autorização automaticamente...');
+            const tokens = await gerarNovoRefreshToken(code);
+            
+            res.send(`
+                <h2>✅ REFRESH_TOKEN gerado com sucesso!</h2>
+                <div style="background: #f8f9fa; padding: 15px; border-left: 4px solid #28a745; margin: 15px 0;">
+                    <h3>🔑 Novo REFRESH_TOKEN:</h3>
+                    <code style="background: #e9ecef; padding: 8px; display: block; word-break: break-all;">
+                        ${tokens.refresh_token}
+                    </code>
                 </div>
                 
-                <div style="margin: 20px 0;">
-                    <a href="/auth" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 3px; margin-right: 10px;">
-                        🔄 Tentar Novamente
-                    </a>
-                    <a href="/" style="background: #6c757d; color: white; padding: 10px 20px; text-decoration: none; border-radius: 3px;">
-                        🏠 Voltar ao Início
-                    </a>
+                <h3>📋 Instruções para aplicar no Render:</h3>
+                <ol>
+                    <li>Vá para <strong>Render Dashboard > Environment Variables</strong></li>
+                    <li>Encontre a variável <code>REFRESH_TOKEN</code></li>
+                    <li>Substitua o valor atual pelo token acima</li>
+                    <li>Clique em <strong>Save Changes</strong></li>
+                    <li>Aguarde o redeploy automático (~2 minutos)</li>
+                </ol>
+                
+                <div style="background: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 15px 0;">
+                    <strong>⚠️ Importante:</strong> Este token é válido e já está funcionando em memória. 
+                    Atualize no Render para persistir entre deploys.
                 </div>
-            </div>
+                
+                <p>
+                    <a href="/" style="background: #007bff; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px;">
+                        🏠 Voltar ao início
+                    </a>
+                    <a href="/autenticar" style="background: #28a745; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px; margin-left: 10px;">
+                        🧪 Testar Autenticação
+                    </a>
+                </p>
+            `);
+            
+        } catch (tokenError) {
+            console.error('❌ Erro ao processar código:', tokenError.message);
+            res.send(`
+                <h2>❌ Erro ao gerar REFRESH_TOKEN</h2>
+                <p><strong>Código recebido:</strong> <code>${code}</code></p>
+                <p><strong>Erro:</strong> ${tokenError.message}</p>
+                
+                <h3>Possíveis soluções:</h3>
+                <ul>
+                    <li>O código pode ter expirado (válido por 10 minutos)</li>
+                    <li>Verifique se CLIENT_ID e CLIENT_SECRET estão corretos</li>
+                    <li>Verifique se REDIRECT_URI está configurada corretamente</li>
+                </ul>
+                
+                <p><a href="/auth">🔄 Tentar nova autorização</a></p>
+            `);
+        }
+    } else {
+        res.send(`
+            <h2>⚠️ Nenhum código recebido</h2>
+            <p>Nenhum código de autorização foi recebido. Tente novamente.</p>
+            <a href="/auth">🔄 Iniciar autorização</a>
         `);
     }
 });
 
-// Inicializar autenticação ao iniciar
-autenticarBling().catch(console.error);
+// Endpoint para debugging manual - buscar apenas produtos
+app.get('/enviar-wix', async (req, res) => {
+    try {
+        console.log('🎯 Endpoint /enviar-wix chamado para teste manual');
+        
+        await autenticarBling();
+        const produtos = await buscarProdutosBling();
+        
+        if (produtos.length === 0) {
+            return res.json({ 
+                mensagem: "⚠️ Nenhum produto com estoque positivo encontrado.",
+                produtos: 0 
+            });
+        }
+        
+        const respostaWix = await enviarParaWix(produtos);
+        
+        res.json({ 
+            sucesso: true,
+            mensagem: '✅ Produtos enviados para Wix com sucesso!',
+            produtosEnviados: produtos.length,
+            amostra: produtos.slice(0, 5), // Mostrar apenas os 5 primeiros
+            respostaWix
+        });
+        
+    } catch (error) {
+        console.error('❌ Erro no endpoint /enviar-wix:', error.message);
+        res.status(500).json({ 
+            erro: error.message,
+            detalhes: error.response?.data || 'Erro interno'
+        });
+    }
+});
 
-app.listen(PORT, () => {
-    console.log(`API de sincronização rodando na porta ${PORT}`);
+// Inicialização do servidor
+app.listen(PORT, async () => {
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+    console.log(`🌐 URL principal: https://bling-wix-middleware.onrender.com`);
+    
+    // Tentar autenticar automaticamente na inicialização
+    try {
+        console.log('🔄 Tentando autenticação automática...');
+        await autenticarBling();
+        const produtos = await buscarProdutosBling();
+        console.log(`✅ Sistema inicializado com sucesso! ${produtos.length} produtos encontrados.`);
+        console.log('🟢 Sistema pronto para sincronização!');
+    } catch (error) {
+        console.error('⚠️ Falha na autenticação inicial:', error.message);
+        
+        if (error.response?.data?.error?.type === 'invalid_grant') {
+            console.log('');
+            console.log('� REFRESH_TOKEN inválido detectado!');
+            console.log('🔧 Para corrigir:');
+            console.log('   1. Acesse: https://bling-wix-middleware.onrender.com/auth');
+            console.log('   2. Autorize a aplicação no Bling');
+            console.log('   3. O sistema irá gerar automaticamente um novo token');
+            console.log('   4. Copie o novo REFRESH_TOKEN e atualize no Render');
+            console.log('');
+        }
+        
+        console.log('🟡 Sistema funcionando em modo limitado - endpoints disponíveis para gerar novo token.');
+    }
 });
