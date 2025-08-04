@@ -61,6 +61,10 @@ async function gerarNovoRefreshToken(authCode) {
     }
 }
 
+// Cache global para sistema resiliente
+let produtosCache = [];
+let cacheTimestamp = null;
+
 // Função para autenticar com o Bling usando refresh_token
 async function autenticarBling() {
     if (!REFRESH_TOKEN) {
@@ -203,20 +207,58 @@ async function enviarParaWix(produtos) {
     console.log('📤 Enviando produtos para o Wix...');
     
     try {
-        const response = await axios({
-            method: 'POST',
-            url: WIX_ENDPOINT,
-            data: produtos,
-            headers: {
-                'Content-Type': 'application/json'
+        // TESTE: Vamos tentar diferentes formatos
+        const tentativas = [
+            // 1. JSON direto (tentativa atual)
+            {
+                data: produtos,
+                headers: { 'Content-Type': 'application/json' },
+                nome: 'JSON direto'
             },
-            timeout: 30000
-        });
+            // 2. String JSON
+            {
+                data: JSON.stringify(produtos),
+                headers: { 'Content-Type': 'application/json' },
+                nome: 'String JSON'
+            },
+            // 3. Form data
+            {
+                data: `produtos=${encodeURIComponent(JSON.stringify(produtos))}`,
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                nome: 'Form data'
+            },
+            // 4. Wrapped em objeto
+            {
+                data: { produtos: produtos },
+                headers: { 'Content-Type': 'application/json' },
+                nome: 'Wrapped em objeto'
+            }
+        ];
         
-        console.log('✅ Dados enviados para o Wix com sucesso!');
-        return response.data;
+        for (const tentativa of tentativas) {
+            console.log(`🔄 Tentando: ${tentativa.nome}`);
+            
+            try {
+                const response = await axios({
+                    method: 'POST',
+                    url: WIX_ENDPOINT,
+                    data: tentativa.data,
+                    headers: tentativa.headers,
+                    timeout: 30000
+                });
+                
+                console.log(`✅ ${tentativa.nome} funcionou!`);
+                return { ...response.data, metodo_usado: tentativa.nome };
+            } catch (error) {
+                console.log(`❌ ${tentativa.nome} falhou:`, error.response?.status);
+                if (tentativa === tentativas[tentativas.length - 1]) {
+                    throw error; // Se é a última tentativa, propagar o erro
+                }
+            }
+        }
+        
     } catch (error) {
-        console.error('❌ Erro ao enviar para o Wix:', error.response?.data || error.message);
+        console.error('❌ Todas as tentativas falharam:', error.response?.data || error.message);
         throw error;
     }
 }
@@ -536,6 +578,26 @@ app.get('/enviar-wix', async (req, res) => {
     }
 });
 
+// Endpoint para verificar última sincronização
+app.get('/status-sync', (req, res) => {
+    res.json({
+        sucesso: true,
+        ultima_sync: ultimaSync || 'Nunca executado',
+        proxima_sync: 'A cada 30 minutos via cron-job',
+        produtos_disponiveis: produtosCache ? produtosCache.length : 0,
+        servidor_online: true,
+        timestamp: new Date().toISOString(),
+        instrucoes: [
+            'Configure cron-job para: GET /testar-wix a cada 30 minutos',
+            'Monitoramento: GET /status-sync',
+            'Produtos: GET /produtos'
+        ]
+    });
+});
+
+// Variável para tracking da última sincronização
+let ultimaSync = null;
+
 // Endpoint para testar conectividade com Wix
 app.get('/testar-wix', async (req, res) => {
     try {
@@ -565,12 +627,24 @@ app.get('/testar-wix', async (req, res) => {
             }
         });
         
+        // Tentar extrair JSON mesmo se content-type for HTML
+        let parsedData = response.data;
+        if (typeof response.data === 'string' && response.data.trim()) {
+            try {
+                parsedData = JSON.parse(response.data);
+                console.log('✅ JSON extraído da resposta HTML:', parsedData);
+            } catch (parseError) {
+                console.log('⚠️ Resposta não é JSON válido:', response.data.substring(0, 200));
+            }
+        }
+        
         res.json({
             sucesso: response.status >= 200 && response.status < 300,
             status: response.status,
             statusText: response.statusText,
             wix_endpoint: WIX_ENDPOINT,
-            response_data: response.data,
+            response_data: parsedData,
+            response_raw: typeof response.data === 'string' ? response.data.substring(0, 500) : response.data,
             headers: response.headers,
             dadosEnviados: dadosTeste,
             timestamp: new Date().toISOString()
