@@ -598,6 +598,58 @@ app.get('/status-sync', (req, res) => {
 // Variável para tracking da última sincronização
 let ultimaSync = null;
 
+// Endpoint /produtos para o Wix buscar dados diretamente
+app.get('/produtos', async (req, res) => {
+    try {
+        console.log('📦 Endpoint /produtos chamado (usado pelo Wix)');
+        
+        // 1. Autenticar
+        await autenticarBling();
+        
+        // 2. Buscar produtos
+        const produtos = await buscarProdutosBling();
+        
+        // 3. Atualizar cache
+        produtosCache = produtos;
+        cacheTimestamp = Date.now();
+        ultimaSync = new Date().toISOString();
+        
+        console.log(`✅ Retornando ${produtos.length} produtos para o Wix`);
+        
+        // 4. Retornar no formato que o Wix espera
+        res.json({
+            sucesso: true,
+            produtos: produtos,
+            total: produtos.length,
+            fonte: 'bling_direto',
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Erro no endpoint /produtos:', error.message);
+        
+        // Fallback: usar cache se disponível
+        if (produtosCache.length > 0) {
+            console.log(`⚠️ Usando cache: ${produtosCache.length} produtos`);
+            return res.json({
+                sucesso: true,
+                produtos: produtosCache,
+                total: produtosCache.length,
+                fonte: 'cache',
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        // Última opção: erro
+        res.status(500).json({ 
+            erro: error.message,
+            produtos: [],
+            total: 0,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
 // Endpoint para testar conectividade com Wix
 app.get('/testar-wix', async (req, res) => {
     try {
