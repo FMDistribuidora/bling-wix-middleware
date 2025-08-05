@@ -205,60 +205,35 @@ async function buscarProdutosBling() {
 // Função para enviar dados para o Wix
 async function enviarParaWix(produtos) {
     console.log('📤 Enviando produtos para o Wix...');
+    console.log(`📦 Total de produtos a enviar: ${produtos.length}`);
+    console.log(`📋 Amostra produto:`, JSON.stringify(produtos[0]));
     
     try {
-        // TESTE: Vamos tentar diferentes formatos
-        const tentativas = [
-            // 1. JSON direto (tentativa atual)
-            {
-                data: produtos,
-                headers: { 'Content-Type': 'application/json' },
-                nome: 'JSON direto'
+        const response = await axios({
+            method: 'POST',
+            url: WIX_ENDPOINT,
+            data: produtos, // Enviar array diretamente
+            headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': 'Bling-Wix-Integration/1.0'
             },
-            // 2. String JSON
-            {
-                data: JSON.stringify(produtos),
-                headers: { 'Content-Type': 'application/json' },
-                nome: 'String JSON'
-            },
-            // 3. Form data
-            {
-                data: `produtos=${encodeURIComponent(JSON.stringify(produtos))}`,
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                nome: 'Form data'
-            },
-            // 4. Wrapped em objeto
-            {
-                data: { produtos: produtos },
-                headers: { 'Content-Type': 'application/json' },
-                nome: 'Wrapped em objeto'
-            }
-        ];
+            timeout: 30000,
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity
+        });
         
-        for (const tentativa of tentativas) {
-            console.log(`🔄 Tentando: ${tentativa.nome}`);
-            
-            try {
-                const response = await axios({
-                    method: 'POST',
-                    url: WIX_ENDPOINT,
-                    data: tentativa.data,
-                    headers: tentativa.headers,
-                    timeout: 30000
-                });
-                
-                console.log(`✅ ${tentativa.nome} funcionou!`);
-                return { ...response.data, metodo_usado: tentativa.nome };
-            } catch (error) {
-                console.log(`❌ ${tentativa.nome} falhou:`, error.response?.status);
-                if (tentativa === tentativas[tentativas.length - 1]) {
-                    throw error; // Se é a última tentativa, propagar o erro
-                }
-            }
-        }
+        console.log(`✅ Dados enviados com sucesso para o Wix!`);
+        console.log(`📊 Resposta Wix:`, JSON.stringify(response.data));
+        
+        return response.data;
         
     } catch (error) {
-        console.error('❌ Todas as tentativas falharam:', error.response?.data || error.message);
+        console.error('❌ Erro ao enviar para Wix:', {
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            data: error.response?.data,
+            headers: error.response?.headers
+        });
         throw error;
     }
 }
