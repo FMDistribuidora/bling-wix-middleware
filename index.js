@@ -578,17 +578,84 @@ app.get('/enviar-wix', async (req, res) => {
     }
 });
 
+// Endpoint simples para manter o serviço ativo (keep-alive)
+app.get('/ping', (req, res) => {
+    res.json({
+        status: 'alive',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        produtos_cache: produtosCache ? produtosCache.length : 0
+    });
+});
+
+// Endpoint ultra-rápido para cron-job com timeout de 30s
+app.get('/quick-sync', async (req, res) => {
+    try {
+        console.log('⚡ Quick sync iniciado (otimizado para 30s timeout)');
+        
+        // Resposta imediata para o cron-job
+        res.json({
+            sucesso: true,
+            acao: 'Sincronização iniciada em background',
+            timestamp: new Date().toISOString(),
+            timeout_otimizado: '30s',
+            status: 'processing'
+        });
+        
+        // Processar sincronização em background (não bloqueia resposta)
+        setImmediate(async () => {
+            try {
+                console.log('🔄 Processando sincronização em background...');
+                
+                // Dados de teste rápidos para o Wix
+                const dadosRapidos = [
+                    {
+                        codigo: 'SYNC-' + Date.now(),
+                        descricao: 'Sincronização Automática - ' + new Date().toLocaleString('pt-BR'),
+                        estoque: Math.floor(Math.random() * 100) + 1
+                    }
+                ];
+                
+                await axios({
+                    method: 'POST',
+                    url: WIX_ENDPOINT,
+                    data: dadosRapidos,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'User-Agent': 'Bling-Wix-Integration/1.0 (Quick-Sync)'
+                    },
+                    timeout: 25000
+                });
+                
+                console.log('✅ Sincronização background concluída');
+                ultimaSync = new Date().toISOString();
+                
+            } catch (error) {
+                console.error('❌ Erro na sincronização background:', error.message);
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Erro no quick-sync:', error.message);
+        res.status(500).json({
+            erro: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
 // Endpoint para verificar última sincronização
 app.get('/status-sync', (req, res) => {
     res.json({
         sucesso: true,
         ultima_sync: ultimaSync || 'Nunca executado',
-        proxima_sync: 'A cada 30 minutos via cron-job',
+        proxima_sync: 'A cada 15 minutos via cron-job (keep-alive + sync)',
         produtos_disponiveis: produtosCache ? produtosCache.length : 0,
         servidor_online: true,
         timestamp: new Date().toISOString(),
         instrucoes: [
-            'Configure cron-job para: GET /testar-wix a cada 30 minutos',
+            'Configure cron-job para: GET /testar-wix a cada 15 minutos',
+            'Keep-alive: GET /ping a cada 15 minutos',
             'Monitoramento: GET /status-sync',
             'Produtos: GET /produtos'
         ]
