@@ -258,6 +258,7 @@ app.get('/', (req, res) => {
             <li><a href="/autenticar">🔑 Testar Autenticação</a></li>
             <li><a href="/sync">🔄 Sincronizar com Wix</a></li>
             <li><a href="/testar-wix">🧪 Testar Conectividade Wix</a></li>
+            <li><a href="/debug-bling">🔍 Debug Estrutura Bling</a></li>
             <li><a href="/auth">🎯 Gerar Novo Token (OAuth)</a></li>
             <li><a href="/gerar-token">⚡ Gerar Token com Código</a></li>
             <li><a href="/token-atual">📋 Ver Token Atual Completo</a></li>
@@ -384,25 +385,100 @@ app.get('/sync', async (req, res) => {
         // 1. Autenticar
         await autenticarBling();
         
-        // 2. Buscar produtos
-        const produtos = await buscarProdutosBling();
+        // 2. Buscar produtos (com debug da estrutura)
+        console.log('🔍 Buscando produtos no Bling...');
         
-        if (produtos.length === 0) {
+        let todosProdutos = [];
+        let pagina = 1;
+        const limite = 5; // Apenas 5 produtos para debug
+        let maisProdutos = true;
+        let estruturaDebug = null;
+
+        while (maisProdutos && pagina === 1) { // Apenas primeira página para debug
+            try {
+                console.log(`📄 Buscando página ${pagina}...`);
+                
+                const response = await axios({
+                    method: 'GET',
+                    url: `https://api.bling.com.br/Api/v3/produtos`,
+                    params: {
+                        pagina: pagina,
+                        limite: limite
+                    },
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Accept': '1.0',
+                        'User-Agent': 'Bling-Wix-Integration/1.0'
+                    },
+                    timeout: 10000
+                });
+
+                const produtos = response.data.data || [];
+                console.log(`📦 Encontrados ${produtos.length} produtos na página ${pagina}`);
+                
+                // GUARDAR ESTRUTURA PARA DEBUG
+                if (produtos.length > 0 && !estruturaDebug) {
+                    estruturaDebug = {
+                        produto_exemplo: produtos[0],
+                        todas_propriedades: Object.keys(produtos[0]),
+                        campos_analisados: {
+                            codigo: produtos[0].codigo || 'NÃO ENCONTRADO',
+                            nome: produtos[0].nome || 'NÃO ENCONTRADO',
+                            descricao: produtos[0].descricao || 'NÃO ENCONTRADO',
+                            estoque_objeto: produtos[0].estoque || 'NÃO ENCONTRADO',
+                            estoque_propriedades: produtos[0].estoque ? Object.keys(produtos[0].estoque) : 'N/A'
+                        }
+                    };
+                }
+                
+                if (produtos.length === 0) {
+                    maisProdutos = false;
+                } else {
+                    todosProdutos = todosProdutos.concat(produtos);
+                    maisProdutos = false; // Para debug, apenas primeira página
+                }
+                
+            } catch (error) {
+                console.error(`❌ Erro ao buscar página ${pagina}:`, error.response?.data || error.message);
+                maisProdutos = false;
+            }
+        }
+
+        console.log(`📊 Total de produtos encontrados: ${todosProdutos.length}`);
+        
+        // Filtrar apenas produtos com estoque > 0
+        const produtosComEstoque = todosProdutos
+            .filter(produto => {
+                const estoque = Number(produto.estoque?.saldoVirtualTotal || 0);
+                return estoque > 0;
+            })
+            .map(produto => ({
+                codigo: produto.codigo,
+                descricao: produto.nome,
+                estoque: Number(produto.estoque?.saldoVirtualTotal || 0)
+            }));
+
+        console.log(`✅ Produtos com estoque: ${produtosComEstoque.length}`);
+        
+        if (produtosComEstoque.length === 0) {
             return res.json({ 
                 mensagem: "⚠️ Nenhum produto com estoque positivo encontrado.",
                 produtos: 0,
+                estrutura_debug: estruturaDebug,
                 timestamp: new Date().toISOString()
             });
         }
         
         // 3. Enviar para Wix
-        const respostaWix = await enviarParaWix(produtos);
+        const respostaWix = await enviarParaWix(produtosComEstoque);
         
         res.json({ 
             sucesso: true,
             mensagem: '✅ Sincronização completa realizada com sucesso!',
-            produtosSincronizados: produtos.length,
+            produtosSincronizados: produtosComEstoque.length,
             respostaWix,
+            estrutura_debug: estruturaDebug,
+            produtos_processados: produtosComEstoque.slice(0, 3), // Mostrar apenas 3 primeiros
             timestamp: new Date().toISOString()
         });
         
@@ -687,6 +763,60 @@ app.get('/produtos', async (req, res) => {
             erro: error.message,
             produtos: [],
             total: 0,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Endpoint para inspecionar estrutura real dos dados do Bling
+app.get('/debug-bling', async (req, res) => {
+    try {
+        console.log('🔍 Inspecionando estrutura real dos dados do Bling...');
+        
+        // 1. Autenticar
+        await autenticarBling();
+        
+        // 2. Buscar apenas 3 produtos para análise
+        const response = await axios({
+            method: 'GET',
+            url: `https://api.bling.com.br/Api/v3/produtos`,
+            params: {
+                pagina: 1,
+                limite: 3 // Apenas 3 produtos para análise
+            },
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': '1.0',
+                'User-Agent': 'Bling-Wix-Integration/1.0'
+            },
+            timeout: 10000
+        });
+
+        const produtos = response.data.data || [];
+        
+        res.json({
+            sucesso: true,
+            mensagem: '🔍 Estrutura real dos dados do Bling:',
+            total_produtos: produtos.length,
+            estrutura_completa: produtos,
+            analise_campos: produtos.map(produto => ({
+                todas_propriedades: Object.keys(produto),
+                codigo_disponivel: produto.codigo || 'CAMPO NÃO ENCONTRADO',
+                nome_disponivel: produto.nome || 'CAMPO NÃO ENCONTRADO', 
+                descricao_disponivel: produto.descricao || 'CAMPO NÃO ENCONTRADO',
+                estoque_objeto: produto.estoque || 'CAMPO NÃO ENCONTRADO',
+                estoque_propriedades: produto.estoque ? Object.keys(produto.estoque) : 'N/A',
+                saldoVirtualTotal: produto.estoque?.saldoVirtualTotal || 'CAMPO NÃO ENCONTRADO',
+                saldoFisico: produto.estoque?.saldoFisico || 'CAMPO NÃO ENCONTRADO'
+            })),
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Erro na inspeção Bling:', error.message);
+        res.status(500).json({
+            erro: error.message,
+            detalhes: error.response?.data || 'Erro interno',
             timestamp: new Date().toISOString()
         });
     }
