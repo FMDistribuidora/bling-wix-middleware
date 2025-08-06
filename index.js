@@ -350,7 +350,7 @@ async function enviarParaWix(produtos) {
         // Verificar se é HTML sendo retornado (erro comum)
         if (typeof response.data === 'string' && response.data.includes('<html>')) {
             console.log('🚨 PROBLEMA: Wix retornou HTML, não JSON!');
-            console.log('� Início da resposta HTML:', response.data.substring(0, 300));
+            console.log('🔍 Início da resposta HTML:', response.data.substring(0, 300));
         }
         
         return response.data;
@@ -1354,7 +1354,7 @@ app.listen(PORT, async () => {
         
         if (error.response?.data?.error?.type === 'invalid_grant') {
             console.log('');
-            console.log('� REFRESH_TOKEN inválido detectado!');
+            console.log('🚨 REFRESH_TOKEN inválido detectado!');
             console.log('🔧 Para corrigir:');
             console.log('   1. Acesse: https://bling-wix-middleware.onrender.com/auth');
             console.log('   2. Autorize a aplicação no Bling');
