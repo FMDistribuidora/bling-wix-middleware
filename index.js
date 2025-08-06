@@ -65,6 +65,46 @@ async function gerarNovoRefreshToken(authCode) {
 let produtosCache = [];
 let cacheTimestamp = null;
 
+// Função para testar conectividade da API Bling
+async function testarConectividadeAPI() {
+    console.log('🔍 Testando conectividade da API Bling...');
+    
+    try {
+        const response = await axios({
+            method: 'GET',
+            url: 'https://api.bling.com.br/Api/v3/produtos',
+            params: {
+                pagina: 1,
+                limite: 1 // Apenas 1 produto para teste
+            },
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': '1.0',
+                'User-Agent': 'Bling-Wix-Integration/1.0'
+            },
+            timeout: 5000
+        });
+        
+        console.log('✅ API Bling respondendo normalmente');
+        return true;
+        
+    } catch (error) {
+        console.warn('⚠️ Problema na conectividade da API:', {
+            message: error.message,
+            code: error.code,
+            status: error.response?.status
+        });
+        
+        // Se for timeout ou erro de rede, retornar false mas não falhar
+        if (error.code === 'ECONNABORTED' || error.code === 'ENOTFOUND' || error.response?.status >= 500) {
+            console.log('🔄 API com instabilidade, mas tentaremos continuar...');
+            return false;
+        }
+        
+        throw error; // Re-throw erros críticos (auth, etc)
+    }
+}
+
 // Função para autenticar com o Bling usando refresh_token
 async function autenticarBling() {
     if (!REFRESH_TOKEN) {
@@ -137,54 +177,117 @@ async function autenticarBling() {
 async function buscarProdutosBling() {
     console.log('🔍 Buscando produtos no Bling...');
     
+    // Testar conectividade primeiro
+    const apiEstavel = await testarConectividadeAPI();
+    if (!apiEstavel) {
+        console.log('⚠️ API instável detectada - usando estratégia resiliente');
+    }
+    
     let todosProdutos = [];
     let pagina = 1;
     const limite = 100;
     let maisProdutos = true;
+    let tentativasConsecutivasErro = 0;
+    const MAX_TENTATIVAS_ERRO = apiEstavel ? 3 : 5; // Mais tolerância se API instável
 
-    while (maisProdutos) {
-        try {
-            console.log(`📄 Buscando página ${pagina}...`);
-            
-            const response = await axios({
-                method: 'GET',
-                url: `https://api.bling.com.br/Api/v3/produtos`,
-                params: {
-                    pagina: pagina,
-                    limite: limite
-                },
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Accept': '1.0',
-                    'User-Agent': 'Bling-Wix-Integration/1.0'
-                },
-                timeout: 10000
-            });
-
-            const produtos = response.data.data || [];
-            console.log(`📦 Encontrados ${produtos.length} produtos na página ${pagina}`);
-            
-            if (produtos.length === 0) {
-                maisProdutos = false;
-            } else {
-                todosProdutos = todosProdutos.concat(produtos);
+    while (maisProdutos && tentativasConsecutivasErro < MAX_TENTATIVAS_ERRO) {
+        let tentativa = 0;
+        const maxTentativas = 3;
+        let sucessoPagina = false;
+        
+        // Retry para cada página individualmente
+        while (tentativa < maxTentativas && !sucessoPagina) {
+            try {
+                tentativa++;
+                console.log(`📄 Buscando página ${pagina}... (tentativa ${tentativa}/${maxTentativas})`);
                 
-                if (produtos.length < limite) {
-                    maisProdutos = false;
-                } else {
-                    pagina++;
+                // Delay progressivo entre tentativas
+                if (tentativa > 1) {
+                    const delayTentativa = Math.pow(2, tentativa - 1) * 1000; // 1s, 2s, 4s...
+                    console.log(`⏳ Aguardando ${delayTentativa}ms antes da tentativa ${tentativa}...`);
+                    await new Promise(resolve => setTimeout(resolve, delayTentativa));
                 }
                 
-                // Rate limiting - aguardar 400ms entre requests
-                await new Promise(resolve => setTimeout(resolve, 400));
+                const response = await axios({
+                    method: 'GET',
+                    url: `https://api.bling.com.br/Api/v3/produtos`,
+                    params: {
+                        pagina: pagina,
+                        limite: limite
+                    },
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Accept': '1.0',
+                        'User-Agent': 'Bling-Wix-Integration/1.0'
+                    },
+                    timeout: 15000, // Aumentar timeout para 15 segundos
+                    validateStatus: function (status) {
+                        return status >= 200 && status < 300;
+                    }
+                });
+
+                const produtos = response.data.data || [];
+                console.log(`📦 ✅ Encontrados ${produtos.length} produtos na página ${pagina}`);
+                
+                // Sucesso - resetar contador de erros consecutivos
+                tentativasConsecutivasErro = 0;
+                sucessoPagina = true;
+                
+                if (produtos.length === 0) {
+                    console.log('📄 Última página atingida (sem produtos)');
+                    maisProdutos = false;
+                } else {
+                    todosProdutos = todosProdutos.concat(produtos);
+                    
+                    if (produtos.length < limite) {
+                        console.log('📄 Última página atingida (menos que o limite)');
+                        maisProdutos = false;
+                    } else {
+                        pagina++;
+                    }
+                }
+                
+            } catch (error) {
+                console.error(`❌ Erro na tentativa ${tentativa} da página ${pagina}:`, {
+                    message: error.message,
+                    code: error.code,
+                    status: error.response?.status,
+                    statusText: error.response?.statusText,
+                    data: error.response?.data?.substring ? error.response.data.substring(0, 200) : error.response?.data
+                });
+                
+                // Se todas as tentativas falharam para esta página
+                if (tentativa === maxTentativas) {
+                    tentativasConsecutivasErro++;
+                    console.error(`💥 Falha definitiva na página ${pagina} após ${maxTentativas} tentativas`);
+                    
+                    if (tentativasConsecutivasErro >= MAX_TENTATIVAS_ERRO) {
+                        console.error(`🚨 PARANDO: ${MAX_TENTATIVAS_ERRO} páginas consecutivas com erro`);
+                        maisProdutos = false;
+                    } else {
+                        // Pular esta página e tentar a próxima
+                        console.log(`⏭️ Pulando página ${pagina} e tentando próxima...`);
+                        pagina++;
+                    }
+                }
             }
-        } catch (error) {
-            console.error(`❌ Erro ao buscar página ${pagina}:`, error.response?.data || error.message);
-            maisProdutos = false;
+        }
+        
+        // Rate limiting - aguardar mais tempo entre páginas
+        if (maisProdutos && sucessoPagina) {
+            const delay = tentativasConsecutivasErro > 0 ? 1000 : 600; // Delay maior após erros
+            console.log(`⏳ Rate limit: aguardando ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
 
     console.log(`📊 Total de produtos encontrados: ${todosProdutos.length}`);
+    console.log(`📊 Resultado da busca: ${tentativasConsecutivasErro < MAX_TENTATIVAS_ERRO ? 'SUCESSO' : 'PARCIAL'}`);
+    
+    // Se conseguimos pelo menos alguns produtos, continuar
+    if (todosProdutos.length === 0) {
+        throw new Error('Nenhum produto foi encontrado na API do Bling');
+    }
     
     // Filtrar apenas produtos com estoque > 0
     const produtosComEstoque = todosProdutos
@@ -199,6 +302,11 @@ async function buscarProdutosBling() {
         }));
 
     console.log(`✅ Produtos com estoque: ${produtosComEstoque.length}`);
+    
+    if (produtosComEstoque.length === 0) {
+        throw new Error('Nenhum produto com estoque positivo foi encontrado');
+    }
+    
     return produtosComEstoque;
 }
 
@@ -207,6 +315,7 @@ async function enviarParaWix(produtos) {
     console.log('📤 Enviando produtos para o Wix...');
     console.log(`📦 Total de produtos a enviar: ${produtos.length}`);
     console.log(`📋 Amostra produto:`, JSON.stringify(produtos[0]));
+    console.log('🔗 URL destino:', WIX_ENDPOINT);
     
     try {
         const response = await axios({
@@ -215,24 +324,46 @@ async function enviarParaWix(produtos) {
             data: produtos, // Enviar array diretamente
             headers: {
                 'Content-Type': 'application/json',
-                'User-Agent': 'Bling-Wix-Integration/1.0'
+                'User-Agent': 'Bling-Wix-Integration/1.0',
+                'Accept': 'application/json'
             },
             timeout: 30000,
             maxContentLength: Infinity,
-            maxBodyLength: Infinity
+            maxBodyLength: Infinity,
+            validateStatus: function (status) {
+                return status < 600; // Aceitar qualquer resposta para debug completo
+            }
         });
         
-        console.log(`✅ Dados enviados com sucesso para o Wix!`);
-        console.log(`📊 Resposta Wix:`, JSON.stringify(response.data));
+        console.log(`📥 RESPOSTA COMPLETA DO WIX:`, {
+            status: response.status,
+            statusText: response.statusText,
+            data: response.data,
+            data_type: typeof response.data,
+            data_string: JSON.stringify(response.data),
+            data_length: response.data ? JSON.stringify(response.data).length : 0,
+            is_html: typeof response.data === 'string' && response.data.includes('<html>'),
+            content_type: response.headers['content-type'],
+            all_headers: response.headers
+        });
+        
+        // Verificar se é HTML sendo retornado (erro comum)
+        if (typeof response.data === 'string' && response.data.includes('<html>')) {
+            console.log('🚨 PROBLEMA: Wix retornou HTML, não JSON!');
+            console.log('� Início da resposta HTML:', response.data.substring(0, 300));
+        }
         
         return response.data;
         
     } catch (error) {
         console.error('❌ Erro ao enviar para Wix:', {
+            message: error.message,
+            code: error.code,
             status: error.response?.status,
             statusText: error.response?.statusText,
             data: error.response?.data,
-            headers: error.response?.headers
+            headers: error.response?.headers,
+            url_tentativa: WIX_ENDPOINT
         });
         throw error;
     }
@@ -258,6 +389,11 @@ app.get('/', (req, res) => {
             <li><a href="/autenticar">🔑 Testar Autenticação</a></li>
             <li><a href="/sync">🔄 Sincronizar com Wix</a></li>
             <li><a href="/testar-wix">🧪 Testar Conectividade Wix</a></li>
+            <li><a href="/testar-wix-direto">🎯 Teste Direto HTTP Function</a></li>
+            <li><a href="/debug-wix-minimal">🐛 Debug Mínimo Wix</a></li>
+            <li><a href="/testar-collection-wix">🗄️ Testar Collection Wix</a></li>
+            <li><a href="/debug-wix-ultimate">🔥 Debug Ultimate Wix</a></li>
+            <li><a href="/verificar-wix">🔍 Verificar Dados no Wix</a></li>
             <li><a href="/debug-bling">🔍 Debug Estrutura Bling</a></li>
             <li><a href="/auth">🎯 Gerar Novo Token (OAuth)</a></li>
             <li><a href="/gerar-token">⚡ Gerar Token com Código</a></li>
@@ -385,106 +521,105 @@ app.get('/sync', async (req, res) => {
         // 1. Autenticar
         await autenticarBling();
         
-        // 2. Buscar produtos (com debug da estrutura)
-        console.log('🔍 Buscando produtos no Bling...');
+        // 2. Buscar todos os produtos
+        const todosProdutos = await buscarProdutosBling();
         
-        let todosProdutos = [];
-        let pagina = 1;
-        const limite = 5; // Apenas 5 produtos para debug
-        let maisProdutos = true;
-        let estruturaDebug = null;
-
-        while (maisProdutos && pagina === 1) { // Apenas primeira página para debug
-            try {
-                console.log(`📄 Buscando página ${pagina}...`);
-                
-                const response = await axios({
-                    method: 'GET',
-                    url: `https://api.bling.com.br/Api/v3/produtos`,
-                    params: {
-                        pagina: pagina,
-                        limite: limite
-                    },
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Accept': '1.0',
-                        'User-Agent': 'Bling-Wix-Integration/1.0'
-                    },
-                    timeout: 10000
-                });
-
-                const produtos = response.data.data || [];
-                console.log(`📦 Encontrados ${produtos.length} produtos na página ${pagina}`);
-                
-                // GUARDAR ESTRUTURA PARA DEBUG
-                if (produtos.length > 0 && !estruturaDebug) {
-                    estruturaDebug = {
-                        produto_exemplo: produtos[0],
-                        todas_propriedades: Object.keys(produtos[0]),
-                        campos_analisados: {
-                            codigo: produtos[0].codigo || 'NÃO ENCONTRADO',
-                            nome: produtos[0].nome || 'NÃO ENCONTRADO',
-                            descricao: produtos[0].descricao || 'NÃO ENCONTRADO',
-                            estoque_objeto: produtos[0].estoque || 'NÃO ENCONTRADO',
-                            estoque_propriedades: produtos[0].estoque ? Object.keys(produtos[0].estoque) : 'N/A'
-                        }
-                    };
-                }
-                
-                if (produtos.length === 0) {
-                    maisProdutos = false;
-                } else {
-                    todosProdutos = todosProdutos.concat(produtos);
-                    maisProdutos = false; // Para debug, apenas primeira página
-                }
-                
-            } catch (error) {
-                console.error(`❌ Erro ao buscar página ${pagina}:`, error.response?.data || error.message);
-                maisProdutos = false;
-            }
-        }
-
-        console.log(`📊 Total de produtos encontrados: ${todosProdutos.length}`);
-        
-        // Filtrar apenas produtos com estoque > 0
-        const produtosComEstoque = todosProdutos
-            .filter(produto => {
-                const estoque = Number(produto.estoque?.saldoVirtualTotal || 0);
-                return estoque > 0;
-            })
-            .map(produto => ({
-                codigo: produto.codigo,
-                descricao: produto.nome,
-                estoque: Number(produto.estoque?.saldoVirtualTotal || 0)
-            }));
-
-        console.log(`✅ Produtos com estoque: ${produtosComEstoque.length}`);
-        
-        if (produtosComEstoque.length === 0) {
+        if (todosProdutos.length === 0) {
             return res.json({ 
                 mensagem: "⚠️ Nenhum produto com estoque positivo encontrado.",
                 produtos: 0,
-                estrutura_debug: estruturaDebug,
                 timestamp: new Date().toISOString()
             });
         }
         
+        // Para teste - vamos enviar todos os produtos, não apenas 2
+        console.log(`📋 Total de produtos encontrados: ${todosProdutos.length}`);
+        
         // 3. Enviar para Wix
-        const respostaWix = await enviarParaWix(produtosComEstoque);
+        const respostaWix = await enviarParaWix(todosProdutos);
         
         res.json({ 
             sucesso: true,
             mensagem: '✅ Sincronização completa realizada com sucesso!',
-            produtosSincronizados: produtosComEstoque.length,
+            produtosSincronizados: todosProdutos.length,
             respostaWix,
-            estrutura_debug: estruturaDebug,
-            produtos_processados: produtosComEstoque.slice(0, 3), // Mostrar apenas 3 primeiros
+            debug_info: {
+                total_produtos_bling: todosProdutos.length,
+                primeiros_5_produtos: todosProdutos.slice(0, 5),
+                produtos_exemplo: todosProdutos[0]
+            },
             timestamp: new Date().toISOString()
         });
         
     } catch (error) {
         console.error('❌ Erro na sincronização:', error.message);
         res.status(500).json({ 
+            erro: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// NOVO: Endpoint específico para debug da limitação
+app.get('/debug-limitacao', async (req, res) => {
+    try {
+        console.log('\n🔍 DEBUG: Investigando limitação de produtos...');
+        
+        // 1. Autenticar
+        await autenticarBling();
+        console.log('✅ Autenticação OK');
+        
+        // 2. Buscar produtos
+        const todosProdutos = await buscarProdutosBling();
+        console.log(`📊 Produtos encontrados: ${todosProdutos.length}`);
+        
+        // 3. Testar diferentes quantidades
+        const testes = [
+            { nome: 'Apenas 1 produto', produtos: todosProdutos.slice(0, 1) },
+            { nome: 'Apenas 2 produtos', produtos: todosProdutos.slice(0, 2) },
+            { nome: 'Primeiros 5 produtos', produtos: todosProdutos.slice(0, 5) },
+            { nome: 'Primeiros 10 produtos', produtos: todosProdutos.slice(0, 10) }
+        ];
+        
+        const resultados = [];
+        
+        for (const teste of testes) {
+            console.log(`\n🧪 Testando: ${teste.nome} (${teste.produtos.length} items)`);
+            
+            try {
+                const resposta = await enviarParaWix(teste.produtos);
+                resultados.push({
+                    teste: teste.nome,
+                    quantidade_enviada: teste.produtos.length,
+                    sucesso: true,
+                    resposta: typeof resposta === 'string' ? 'HTML_RESPONSE' : resposta
+                });
+                console.log(`✅ ${teste.nome}: SUCESSO`);
+            } catch (error) {
+                resultados.push({
+                    teste: teste.nome,
+                    quantidade_enviada: teste.produtos.length,
+                    sucesso: false,
+                    erro: error.message
+                });
+                console.log(`❌ ${teste.nome}: FALHOU - ${error.message}`);
+            }
+        }
+        
+        res.json({
+            debug_limitacao: true,
+            total_produtos_disponiveis: todosProdutos.length,
+            testes_realizados: resultados,
+            conclusao: resultados.find(r => r.quantidade_enviada === 2 && r.sucesso) ? 
+                'LIMITAÇÃO CONFIRMADA EM 2 PRODUTOS' : 
+                'LIMITAÇÃO NÃO CONFIRMADA',
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Erro no debug:', error.message);
+        res.status(500).json({
+            debug_limitacao: true,
             erro: error.message,
             timestamp: new Date().toISOString()
         });
@@ -817,6 +952,317 @@ app.get('/debug-bling', async (req, res) => {
         res.status(500).json({
             erro: error.message,
             detalhes: error.response?.data || 'Erro interno',
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Endpoint para testar diretamente a HTTP Function do Wix
+app.get('/testar-wix-direto', async (req, res) => {
+    try {
+        console.log('🧪 Testando HTTP Function Wix diretamente...');
+        
+        // Dados de teste simples
+        const dadosTeste = [
+            {
+                codigo: 'TESTE-DIRETO-001',
+                descricao: 'Produto Teste Direto',
+                estoque: 999
+            }
+        ];
+        
+        console.log('📤 Enviando dados de teste:', dadosTeste);
+        
+        const response = await axios({
+            method: 'POST',
+            url: WIX_ENDPOINT,
+            data: dadosTeste,
+            headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': 'Bling-Wix-Integration/1.0 (Direct-Test)'
+            },
+            timeout: 30000,
+            validateStatus: function (status) {
+                return status < 600; // Aceitar qualquer resposta para debug
+            }
+        });
+        
+        console.log('📥 Resposta recebida:', {
+            status: response.status,
+            headers: response.headers,
+            data: response.data
+        });
+        
+        res.json({
+            sucesso: true,
+            teste: 'Teste direto da HTTP Function',
+            wix_endpoint: WIX_ENDPOINT,
+            dados_enviados: dadosTeste,
+            resposta_wix: {
+                status: response.status,
+                statusText: response.statusText,
+                headers: response.headers,
+                data: response.data
+            },
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Erro no teste direto:', error.message);
+        res.status(500).json({
+            erro: error.message,
+            codigo: error.code,
+            detalhes: error.response ? {
+                status: error.response.status,
+                statusText: error.response.statusText,
+                data: error.response.data,
+                headers: error.response.headers
+            } : 'Sem resposta do servidor',
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Endpoint DEBUG: Testar com dados mínimos
+app.get('/debug-wix-minimal', async (req, res) => {
+    console.log('🐛 DEBUG: Teste mínimo com Wix...');
+    
+    try {
+        // Dados super simples para testar - UM PRODUTO SÓ
+        const dadosMinimos = [
+            {
+                codigo: 'DEBUG001',
+                descricao: 'Debug Test',
+                estoque: 1
+            }
+        ];
+        
+        console.log('📤 Enviando dados mínimos:', dadosMinimos);
+        
+        const resposta = await axios.post(WIX_ENDPOINT, dadosMinimos, {
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            timeout: 10000,
+            validateStatus: function (status) {
+                return status < 500; // Aceitar qualquer status < 500
+            }
+        });
+        
+        console.log('📥 Resposta completa:', {
+            status: resposta.status,
+            data: resposta.data,
+            headers: Object.keys(resposta.headers)
+        });
+        
+        res.json({
+            sucesso: true,
+            teste: 'minimal',
+            wix_status: resposta.status,
+            wix_data: resposta.data,
+            wix_content_type: resposta.headers['content-type'],
+            dados_enviados: dadosMinimos,
+            debug_info: {
+                response_size: JSON.stringify(resposta.data || '').length,
+                is_empty: !resposta.data || resposta.data === '',
+                data_type: typeof resposta.data,
+                response_text: JSON.stringify(resposta.data)
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Erro no debug mínimo:', error);
+        res.status(500).json({
+            sucesso: false,
+            erro: error.message,
+            codigo_erro: error.code,
+            resposta_wix: error.response?.data,
+            status_wix: error.response?.status
+        });
+    }
+});
+
+// Endpoint para testar se collection existe e está acessível
+app.get('/testar-collection-wix', async (req, res) => {
+    console.log('🔍 Testando se Collection Estoque está acessível...');
+    
+    try {
+        // Dados de teste para inserção manual
+        const produtoTeste = {
+            codigoProduto: 'TESTE-MANUAL-001',
+            nomeProduto: 'Produto Manual Teste',
+            quantidadeEstoque: 999,
+            ultimaAtualizacao: new Date()
+        };
+        
+        console.log('📤 Enviando produto teste:', produtoTeste);
+        
+        const resposta = await axios.post(WIX_ENDPOINT, [produtoTeste], {
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            timeout: 15000
+        });
+        
+        console.log('📥 Resposta da collection:', resposta.data);
+        
+        res.json({
+            sucesso: true,
+            teste: 'collection_access',
+            produto_enviado: produtoTeste,
+            resposta_wix: resposta.data,
+            status: resposta.status,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Erro no teste da collection:', error);
+        res.json({
+            sucesso: false,
+            erro: error.message,
+            resposta_erro: error.response?.data,
+            status_erro: error.response?.status,
+            teste: 'collection_access_failed'
+        });
+    }
+});
+
+// Endpoint para testar DIRETAMENTE a HTTP Function do Wix
+app.get('/debug-wix-ultimate', async (req, res) => {
+    console.log('🔥 DEBUG ULTIMATE: Testando Wix com logs completos...');
+    
+    try {
+        const produtoTeste = {
+            codigo: 'ULTIMATE-001',
+            descricao: 'Teste Ultimate Debug',
+            estoque: 777
+        };
+        
+        console.log('🎯 URL EXATA:', WIX_ENDPOINT);
+        console.log('📤 Dados enviados:', JSON.stringify([produtoTeste], null, 2));
+        
+        const response = await axios({
+            method: 'POST',
+            url: WIX_ENDPOINT,
+            data: [produtoTeste],
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'User-Agent': 'Debug-Ultimate/1.0'
+            },
+            timeout: 20000,
+            validateStatus: function (status) {
+                return true; // Aceitar QUALQUER status
+            }
+        });
+        
+        console.log('📥 RESPOSTA BRUTA COMPLETA:');
+        console.log('Status:', response.status);
+        console.log('StatusText:', response.statusText);
+        console.log('Headers:', JSON.stringify(response.headers, null, 2));
+        console.log('Data tipo:', typeof response.data);
+        console.log('Data conteúdo:', JSON.stringify(response.data, null, 2));
+        console.log('Data string:', String(response.data));
+        console.log('Data length:', response.data ? String(response.data).length : 0);
+        
+        // Verificar se é HTML
+        const isHTML = typeof response.data === 'string' && response.data.includes('<html>');
+        
+        res.json({
+            teste: 'ultimate_debug',
+            sucesso: response.status >= 200 && response.status < 300,
+            url_testada: WIX_ENDPOINT,
+            dados_enviados: [produtoTeste],
+            resposta_completa: {
+                status: response.status,
+                statusText: response.statusText,
+                headers: response.headers,
+                data: response.data,
+                data_type: typeof response.data,
+                data_string: String(response.data),
+                data_length: response.data ? String(response.data).length : 0,
+                is_html: isHTML,
+                is_empty: !response.data || response.data === '' || response.data === '""'
+            },
+            analise: {
+                parece_funcionar: response.status === 200,
+                retorna_json: response.headers['content-type']?.includes('application/json'),
+                retorna_html: isHTML,
+                resposta_vazia: !response.data || response.data === '',
+                possivel_problema: isHTML ? 'Retornando HTML (erro 404/500?)' : 
+                                  (!response.data ? 'Resposta completamente vazia' : 'HTTP Function não retorna dados')
+            },
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ ERRO NO DEBUG ULTIMATE:', error);
+        res.status(500).json({
+            erro: error.message,
+            codigo: error.code,
+            resposta_erro: error.response?.data,
+            status_erro: error.response?.status,
+            headers_erro: error.response?.headers
+        });
+    }
+});
+
+// Endpoint para verificar se os dados chegaram no Wix
+app.get('/verificar-wix', async (req, res) => {
+    try {
+        console.log('🔍 Verificando dados no Wix...');
+        
+        // Fazer uma requisição GET para testar se o Wix tem um endpoint de consulta
+        const wixUrl = WIX_ENDPOINT.replace('/receberProdutos', '/consultarProdutos');
+        
+        try {
+            const response = await axios({
+                method: 'GET',
+                url: wixUrl,
+                headers: {
+                    'User-Agent': 'Bling-Wix-Integration/1.0 (Verification)'
+                },
+                timeout: 30000,
+                validateStatus: function (status) {
+                    return status < 500; // Aceitar qualquer resposta
+                }
+            });
+            
+            res.json({
+                sucesso: true,
+                mensagem: '🔍 Verificação do Wix realizada',
+                wix_url_testado: wixUrl,
+                status: response.status,
+                resposta: response.data,
+                instrucoes: [
+                    'Se status 200: Wix respondeu com dados',
+                    'Se status 404: Endpoint não existe (normal)',
+                    'Se status 500: Erro no Wix',
+                    'Para verificar manualmente, acesse sua página Wix de consulta'
+                ],
+                timestamp: new Date().toISOString()
+            });
+            
+        } catch (error) {
+            res.json({
+                sucesso: false,
+                mensagem: '⚠️ Não foi possível verificar diretamente',
+                erro: error.message,
+                wix_url_testado: wixUrl,
+                instrucoes: [
+                    '1. Acesse sua página Wix de consulta de estoque',
+                    '2. Procure pelos produtos: TX 2052 e TR 4061',
+                    '3. Se aparecerem, a sincronização funcionou!',
+                    '4. Se não aparecerem, verifique os logs do Wix'
+                ],
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro na verificação:', error.message);
+        res.status(500).json({
+            erro: error.message,
             timestamp: new Date().toISOString()
         });
     }
