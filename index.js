@@ -1,11 +1,17 @@
-// index-render-deploy.js - VERSÃO OTIMIZADA PARA RENDER
+// index.js - VERSÃO OTIMIZADA PARA RENDER COM CORS LIBERADO
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const qs = require('qs');
+const cors = require('cors'); // ADICIONADO
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+
+// CORS liberado para qualquer origem (ou especifique seu domínio Wix)
+app.use(cors({
+  origin: '*', // Para produção, use: 'https://www.fmpapeisdeparede.com.br'
+}));
 
 app.use(express.json());
 
@@ -275,20 +281,12 @@ app.get('/callback', async (req, res) => {
     }
 });
 
-// Endpoint OPTIONS para CORS
-app.options('/produtos', (req, res) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, User-Agent');
-    res.status(200).end();
-});
-
 // ENDPOINT PRINCIPAL OTIMIZADO
 app.get('/produtos', async (req, res) => {
     try {
         console.log('📦 Endpoint /produtos chamado (OTIMIZADO)');
         
-        // CORS headers
+        // CORS headers (redundante, mas garante em todas respostas)
         res.header('Access-Control-Allow-Origin', '*');
         res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, User-Agent');
