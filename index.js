@@ -1,16 +1,16 @@
-// index.js - VERSÃO OTIMIZADA PARA RENDER COM CORS LIBERADO
+// index.js - VERSÃO CORRIGIDA PARA BUSCAR TODOS OS PRODUTOS
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const qs = require('qs');
-const cors = require('cors'); // ADICIONADO
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// CORS liberado para qualquer origem (ou especifique seu domínio Wix)
+// CORS liberado para qualquer origem
 app.use(cors({
-  origin: '*', // Para produção, use: 'https://www.fmpapeisdeparede.com.br'
+  origin: '*',
 }));
 
 app.use(express.json());
@@ -73,9 +73,9 @@ async function autenticarBling() {
     }
 }
 
-// Função otimizada para buscar produtos com timeout menor
+// ✅ FUNÇÃO CORRIGIDA - BUSCA TODOS OS PRODUTOS
 async function buscarProdutosBling() {
-    console.log('🔍 Buscando produtos no Bling (versão otimizada)...');
+    console.log('🔍 Buscando TODOS os produtos no Bling...');
     
     let todosProdutos = [];
     let pagina = 1;
@@ -83,9 +83,9 @@ async function buscarProdutosBling() {
     let maisProdutos = true;
     let tentativasErro = 0;
     const MAX_TENTATIVAS = 3;
-    const MAX_PAGINAS = 20; // Limitar para evitar timeout
-
-    while (maisProdutos && tentativasErro < MAX_TENTATIVAS && pagina <= MAX_PAGINAS) {
+    // ✅ REMOVIDO LIMITE DE PÁGINAS - busca até o final
+    
+    while (maisProdutos && tentativasErro < MAX_TENTATIVAS) {
         try {
             console.log(`📄 Buscando página ${pagina}...`);
             
@@ -101,7 +101,7 @@ async function buscarProdutosBling() {
                     'Accept': '1.0',
                     'User-Agent': 'Bling-Wix-Integration/1.0'
                 },
-                timeout: 8000 // Timeout menor
+                timeout: 12000 // ✅ Timeout aumentado para acomodar mais páginas
             });
 
             const produtos = response.data.data || [];
@@ -109,6 +109,7 @@ async function buscarProdutosBling() {
             
             if (produtos.length === 0 || produtos.length < limite) {
                 maisProdutos = false;
+                console.log(`✅ Última página alcançada (página ${pagina})`);
             } else {
                 pagina++;
             }
@@ -116,8 +117,8 @@ async function buscarProdutosBling() {
             todosProdutos = todosProdutos.concat(produtos);
             tentativasErro = 0; // Reset contador
             
-            // Rate limiting reduzido
-            await new Promise(resolve => setTimeout(resolve, 300));
+            // ✅ Rate limiting ajustado
+            await new Promise(resolve => setTimeout(resolve, 400));
             
         } catch (error) {
             console.error(`❌ Erro na página ${pagina}:`, error.message);
@@ -129,26 +130,36 @@ async function buscarProdutosBling() {
             }
             
             // Aguardar antes de tentar novamente
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
     }
 
     console.log(`📊 Total de produtos encontrados: ${todosProdutos.length}`);
     
-    // Filtrar produtos com estoque
-    const produtosComEstoque = todosProdutos
-        .filter(produto => {
-            const estoque = Number(produto.estoque?.saldoVirtualTotal || 0);
-            return estoque > 0;
-        })
-        .map(produto => ({
+    // ✅ CORREÇÃO PRINCIPAL: INCLUIR TODOS OS PRODUTOS (até os sem estoque)
+    const todosProdutosFormatados = todosProdutos.map(produto => {
+        let estoque = Number(produto.estoque?.saldoVirtualTotal || 0);
+        
+        // ✅ Converter valores negativos para zero
+        if (estoque < 0) {
+            estoque = 0;
+        }
+        
+        return {
             codigo: produto.codigo,
             descricao: produto.nome,
-            estoque: Number(produto.estoque?.saldoVirtualTotal || 0)
-        }));
+            estoque: estoque
+        };
+    });
 
-    console.log(`✅ Produtos com estoque: ${produtosComEstoque.length}`);
-    return produtosComEstoque;
+    const produtosComEstoque = todosProdutosFormatados.filter(p => p.estoque > 0).length;
+    const produtosSemEstoque = todosProdutosFormatados.filter(p => p.estoque === 0).length;
+    
+    console.log(`✅ Total produtos processados: ${todosProdutosFormatados.length}`);
+    console.log(`📈 Com estoque: ${produtosComEstoque}`);
+    console.log(`📉 Sem estoque: ${produtosSemEstoque}`);
+    
+    return todosProdutosFormatados;
 }
 
 // Verificar se cache é válido
@@ -160,15 +171,15 @@ function cacheValido() {
 app.get('/', (req, res) => {
     res.send(`
         <h1>🔗 Bling-Wix Integration API</h1>
-        <h2>✅ Sistema Online - VERSÃO OTIMIZADA v4.0</h2>
+        <h2>✅ Sistema Online - VERSÃO CORRIGIDA v4.1</h2>
         
         <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; margin: 15px 0; border-radius: 5px;">
-            <h3>🚀 NOVA ABORDAGEM - WIX BUSCA DADOS:</h3>
+            <h3>🚀 CORREÇÕES APLICADAS:</h3>
             <ul>
-                <li>✅ <strong>Endpoint /produtos otimizado</strong> - Performance melhorada</li>
-                <li>✅ <strong>Cache inteligente (10 min)</strong> - Evita timeouts</li>
-                <li>✅ <strong>Timeout otimizado</strong> - Resposta mais rápida</li>
-                <li>✅ <strong>Dados sempre atualizados</strong> - Direto do Bling</li>
+                <li>✅ <strong>Busca TODOS os produtos</strong> - Sem limite de páginas</li>
+                <li>✅ <strong>Inclui produtos sem estoque</strong> - Não filtra mais</li>
+                <li>✅ <strong>Converte negativos para zero</strong> - Tratamento de dados</li>
+                <li>✅ <strong>Cache inteligente (10 min)</strong> - Performance mantida</li>
             </ul>
         </div>
         
@@ -176,12 +187,12 @@ app.get('/', (req, res) => {
         <ul>
             <li><strong>Cache:</strong> ${cacheValido() ? `✅ ${produtosCache.length} produtos (válido)` : '❌ Inválido'}</li>
             <li><strong>Access Token:</strong> ${accessToken ? '✅ Ativo' : '❌ Não autenticado'}</li>
-            <li><strong>Versão:</strong> OTIMIZADA v4.0</li>
+            <li><strong>Versão:</strong> CORRIGIDA v4.1</li>
         </ul>
         
         <h3>🔧 Endpoints:</h3>
         <ul>
-            <li><a href="/produtos" style="background: #007bff; color: white; padding: 5px 10px; text-decoration: none; border-radius: 3px;">📦 Produtos (PRINCIPAL)</a></li>
+            <li><a href="/produtos" style="background: #007bff; color: white; padding: 5px 10px; text-decoration: none; border-radius: 3px;">📦 Produtos (TODOS)</a></li>
             <li><a href="/autenticar">🔑 Testar Autenticação</a></li>
             <li><a href="/auth">🎯 Gerar Novo Token</a></li>
         </ul>
@@ -281,12 +292,12 @@ app.get('/callback', async (req, res) => {
     }
 });
 
-// ENDPOINT PRINCIPAL OTIMIZADO
+// ENDPOINT PRINCIPAL CORRIGIDO
 app.get('/produtos', async (req, res) => {
     try {
-        console.log('📦 Endpoint /produtos chamado (OTIMIZADO)');
+        console.log('📦 Endpoint /produtos chamado (VERSÃO CORRIGIDA)');
         
-        // CORS headers (redundante, mas garante em todas respostas)
+        // CORS headers
         res.header('Access-Control-Allow-Origin', '*');
         res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, User-Agent');
@@ -299,7 +310,7 @@ app.get('/produtos', async (req, res) => {
                 produtos: produtosCache,
                 total: produtosCache.length,
                 fonte: 'cache',
-                versao: 'OTIMIZADA v4.0',
+                versao: 'CORRIGIDA v4.1',
                 timestamp: new Date().toISOString(),
                 cache_info: {
                     criado_em: new Date(cacheTimestamp).toISOString(),
@@ -308,7 +319,7 @@ app.get('/produtos', async (req, res) => {
             });
         }
         
-        console.log('🔄 Cache expirado, buscando dados atualizados...');
+        console.log('🔄 Cache expirado, buscando TODOS os dados...');
         
         // Autenticar e buscar produtos
         await autenticarBling();
@@ -325,7 +336,7 @@ app.get('/produtos', async (req, res) => {
             produtos: produtos,
             total: produtos.length,
             fonte: 'bling_direto',
-            versao: 'OTIMIZADA v4.0',
+            versao: 'CORRIGIDA v4.1',
             timestamp: new Date().toISOString(),
             cache_info: {
                 atualizado_agora: true,
@@ -349,7 +360,7 @@ app.get('/produtos', async (req, res) => {
                 produtos: produtosCache,
                 total: produtosCache.length,
                 fonte: 'cache_fallback',
-                versao: 'OTIMIZADA v4.0',
+                versao: 'CORRIGIDA v4.1',
                 timestamp: new Date().toISOString(),
                 aviso: 'Dados do cache devido a erro na API'
             });
@@ -360,7 +371,7 @@ app.get('/produtos', async (req, res) => {
             erro: error.message,
             produtos: [],
             total: 0,
-            versao: 'OTIMIZADA v4.0',
+            versao: 'CORRIGIDA v4.1',
             timestamp: new Date().toISOString()
         });
     }
@@ -370,7 +381,7 @@ app.get('/produtos', async (req, res) => {
 app.get('/ping', (req, res) => {
     res.json({
         status: 'alive',
-        versao: 'OTIMIZADA v4.0',
+        versao: 'CORRIGIDA v4.1',
         timestamp: new Date().toISOString(),
         cache: {
             produtos: produtosCache.length,
@@ -380,16 +391,16 @@ app.get('/ping', (req, res) => {
     });
 });
 
-// Inicialização otimizada
+// Inicialização corrigida
 app.listen(PORT, async () => {
-    console.log(`🚀 Servidor OTIMIZADO rodando na porta ${PORT}`);
+    console.log(`🚀 Servidor CORRIGIDO rodando na porta ${PORT}`);
     console.log(`🌐 URL: https://bling-wix-middleware.onrender.com`);
-    console.log(`🎉 VERSÃO: OTIMIZADA v4.0 - Cache inteligente + timeouts reduzidos`);
+    console.log(`🎉 VERSÃO: CORRIGIDA v4.1 - Busca TODOS os produtos`);
     
-    // Inicialização em background para não bloquear o startup
+    // Inicialização em background
     setTimeout(async () => {
         try {
-            console.log('🔄 Inicializando cache em background...');
+            console.log('🔄 Inicializando cache com TODOS os produtos...');
             await autenticarBling();
             const produtos = await buscarProdutosBling();
             produtosCache = produtos;
@@ -399,5 +410,5 @@ app.listen(PORT, async () => {
             console.log('⚠️ Falha na inicialização do cache:', error.message);
             console.log('🟡 Sistema funcionará com cache sob demanda');
         }
-    }, 2000); // Aguardar 2 segundos após startup
+    }, 2000);
 });
