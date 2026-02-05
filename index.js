@@ -29,13 +29,97 @@ let produtosCache = [];
 let cacheTimestamp = null;
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutos
 
-// Função para autenticar com o Bling usando refresh_token
+// Render API config (para persistir REFRESH_TOKEN)
+const RENDER_API_BASE = 'https://api.render.com/v1';
+const RENDER_API_KEY = process.env.RENDER_API_KEY;        // configure no Render
+const RENDER_SERVICE_ID = process.env.RENDER_SERVICE_ID;  // configure no Render (srv-...)
+
+/* ---------------------------
+   Validação simples de ENV
+   --------------------------- */
+function validarEnv() {
+  const required = ['CLIENT_ID','CLIENT_SECRET','REDIRECT_URI','WIX_ENDPOINT'];
+  const missing = required.filter(k => !process.env[k]);
+  if (missing.length) {
+    console.error('❌ Variáveis de ambiente faltando:', missing.join(', '));
+  } else {
+    console.log('✅ Variáveis de ambiente essenciais presentes.');
+  }
+}
+validarEnv();
+
+/* ---------------------------
+   Helpers Render API (env-vars)
+   --------------------------- */
+async function listRenderEnvVars(serviceId) {
+  const url = `${RENDER_API_BASE}/services/${serviceId}/env-vars`;
+  const resp = await axios.get(url, {
+    headers: { Authorization: `Bearer ${RENDER_API_KEY}` },
+    timeout: 15000
+  });
+  return resp.data; // array
+}
+
+async function patchRenderEnvVar(serviceId, envId, newValue) {
+  const url = `${RENDER_API_BASE}/services/${serviceId}/env-vars/${envId}`;
+  const resp = await axios.patch(url, { value: newValue }, {
+    headers: { Authorization: `Bearer ${RENDER_API_KEY}` },
+    timeout: 15000
+  });
+  return resp.data;
+}
+
+async function postRenderEnvVars(serviceId, varsArray) {
+  const url = `${RENDER_API_BASE}/services/${serviceId}/env-vars`;
+  const resp = await axios.post(url, varsArray, {
+    headers: { Authorization: `Bearer ${RENDER_API_KEY}`, 'Content-Type': 'application/json' },
+    timeout: 15000
+  });
+  return resp.data;
+}
+
+async function updateRenderRefreshToken(newRefreshToken) {
+  if (!RENDER_API_KEY || !RENDER_SERVICE_ID) {
+    console.warn('⚠️ RENDER_API_KEY ou RENDER_SERVICE_ID não configurados; pulando atualização automática no Render.');
+    return false;
+  }
+
+  try {
+    console.log('🔃 Atualizando REFRESH_TOKEN no Render (serviceId:', RENDER_SERVICE_ID, ')...');
+
+    const envVars = await listRenderEnvVars(RENDER_SERVICE_ID);
+    const existing = Array.isArray(envVars) ? envVars.find(ev => ev.key === 'REFRESH_TOKEN') : null;
+
+    if (existing) {
+      try {
+        await patchRenderEnvVar(RENDER_SERVICE_ID, existing.id, newRefreshToken);
+        console.log('✅ REFRESH_TOKEN atualizado (patch) no Render.');
+        return true;
+      } catch (patchErr) {
+        console.warn('⚠️ Patch falhou, tentando criar via POST. Erro:', patchErr.response ? patchErr.response.data : patchErr.message);
+        // fallback continua para POST
+      }
+    }
+
+    await postRenderEnvVars(RENDER_SERVICE_ID, [{ key: 'REFRESH_TOKEN', value: newRefreshToken }]);
+    console.log('✅ REFRESH_TOKEN criado/atualizado (post) no Render.');
+    return true;
+
+  } catch (err) {
+    console.error('❌ Falha ao atualizar REFRESH_TOKEN no Render:', err.response ? err.response.data : err.message);
+    return false;
+  }
+}
+
+/* ---------------------------
+   Função para autenticar com o Bling usando refresh_token
+   --------------------------- */
 async function autenticarBling() {
     if (!REFRESH_TOKEN) {
         throw new Error('REFRESH_TOKEN não configurado');
     }
 
-    console.log('🔄 Autenticando com Bling...');
+    console.log('🔄 Autenticando com Bling (refresh_token)...');
     
     try {
         const authString = `${CLIENT_ID}:${CLIENT_SECRET}`;
@@ -45,7 +129,10 @@ async function autenticarBling() {
             grant_type: 'refresh_token',
             refresh_token: REFRESH_TOKEN
         };
-        
+
+        // DEBUG: log mínimo do payload (evite logar valores sensíveis em produção)
+        console.log('➡️ POST https://api.bling.com.br/Api/v3/oauth/token', { grant_type: requestData.grant_type });
+
         const response = await axios({
             method: 'POST',
             url: 'https://api.bling.com.br/Api/v3/oauth/token',
@@ -56,24 +143,37 @@ async function autenticarBling() {
                 'Accept': '1.0',
                 'User-Agent': 'Bling-Wix-Integration/1.0'
             },
-            timeout: 10000
+            timeout: 15000
         });
 
         accessToken = response.data.access_token;
-        console.log('✅ Autenticação bem-sucedida!');
-        
+        console.log('✅ Autenticação bem-sucedida! token obtido.');
+
         if (response.data.refresh_token) {
+            console.log('ℹ️ Novo refresh_token recebido (será usado em memória e tentaremos persistir no Render).');
             REFRESH_TOKEN = response.data.refresh_token;
+
+            // tenta persistir no Render (não bloqueia a execução)
+            updateRenderRefreshToken(REFRESH_TOKEN).catch(e => {
+              console.warn('⚠️ updateRenderRefreshToken error:', e && e.message ? e.message : e);
+            });
         }
         
         return accessToken;
     } catch (error) {
-        console.error('❌ Erro na autenticação:', error.message);
+        if (error.response) {
+            console.error('❌ Erro na autenticação. status:', error.response.status);
+            console.error('❌ Corpo da resposta do Bling:', JSON.stringify(error.response.data, null, 2));
+        } else {
+            console.error('❌ Erro na autenticação (sem response):', error.message);
+        }
         throw error;
     }
 }
 
-// ✅ FUNÇÃO CORRIGIDA - BUSCA TODOS OS PRODUTOS
+/* ---------------------------
+   FUNÇÃO CORRIGIDA - BUSCA TODOS OS PRODUTOS
+   --------------------------- */
 async function buscarProdutosBling() {
     console.log('🔍 Buscando TODOS os produtos no Bling...');
     
@@ -83,7 +183,6 @@ async function buscarProdutosBling() {
     let maisProdutos = true;
     let tentativasErro = 0;
     const MAX_TENTATIVAS = 3;
-    // ✅ REMOVIDO LIMITE DE PÁGINAS - busca até o final
     
     while (maisProdutos && tentativasErro < MAX_TENTATIVAS) {
         try {
@@ -101,7 +200,7 @@ async function buscarProdutosBling() {
                     'Accept': '1.0',
                     'User-Agent': 'Bling-Wix-Integration/1.0'
                 },
-                timeout: 12000 // ✅ Timeout aumentado para acomodar mais páginas
+                timeout: 12000
             });
 
             const produtos = response.data.data || [];
@@ -115,9 +214,7 @@ async function buscarProdutosBling() {
             }
             
             todosProdutos = todosProdutos.concat(produtos);
-            tentativasErro = 0; // Reset contador
-            
-            // ✅ Rate limiting ajustado
+            tentativasErro = 0;
             await new Promise(resolve => setTimeout(resolve, 400));
             
         } catch (error) {
@@ -128,23 +225,15 @@ async function buscarProdutosBling() {
                 console.log(`🛑 Parando após ${MAX_TENTATIVAS} tentativas consecutivas`);
                 break;
             }
-            
-            // Aguardar antes de tentar novamente
             await new Promise(resolve => setTimeout(resolve, 2000));
         }
     }
 
     console.log(`📊 Total de produtos encontrados: ${todosProdutos.length}`);
     
-    // ✅ CORREÇÃO PRINCIPAL: INCLUIR TODOS OS PRODUTOS (até os sem estoque)
     const todosProdutosFormatados = todosProdutos.map(produto => {
         let estoque = Number(produto.estoque?.saldoVirtualTotal || 0);
-        
-        // ✅ Converter valores negativos para zero
-        if (estoque < 0) {
-            estoque = 0;
-        }
-        
+        if (estoque < 0) estoque = 0;
         return {
             codigo: produto.codigo,
             descricao: produto.nome,
@@ -267,6 +356,14 @@ app.get('/callback', async (req, res) => {
 
             accessToken = response.data.access_token;
             REFRESH_TOKEN = response.data.refresh_token;
+
+            // tenta persistir no Render (se configurado)
+            try {
+              await updateRenderRefreshToken(REFRESH_TOKEN);
+              console.log('✅ REFRESH_TOKEN persistido no Render via /callback.');
+            } catch (e) {
+              console.warn('⚠️ Falha ao persistir REFRESH_TOKEN no Render via /callback:', e && e.message ? e.message : e);
+            }
             
             res.send(`
                 <h2>✅ REFRESH_TOKEN gerado!</h2>
@@ -281,12 +378,18 @@ app.get('/callback', async (req, res) => {
                 <ol>
                     <li>Copie o token acima</li>
                     <li>Vá ao Render > Environment Variables</li>
-                    <li>Atualize REFRESH_TOKEN</li>
+                    <li>Atualize REFRESH_TOKEN (se desejar)</li>
                     <li>Salve para redeploy</li>
                 </ol>
             `);
             
         } catch (tokenError) {
+            if (tokenError.response) {
+                console.error('❌ Erro ao gerar token (callback). status:', tokenError.response.status);
+                console.error('❌ Corpo da resposta do Bling (callback):', JSON.stringify(tokenError.response.data, null, 2));
+            } else {
+                console.error('❌ Erro ao gerar token (callback):', tokenError.message);
+            }
             res.send(`<h2>❌ Erro ao gerar token: ${tokenError.message}</h2>`);
         }
     }
