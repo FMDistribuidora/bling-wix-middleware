@@ -20,7 +20,6 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI;
 let REFRESH_TOKEN = process.env.REFRESH_TOKEN;
-const WIX_ENDPOINT = process.env.WIX_ENDPOINT;
 
 let accessToken = null;
 
@@ -29,16 +28,11 @@ let produtosCache = [];
 let cacheTimestamp = null;
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutos
 
-// Render API config (para persistir REFRESH_TOKEN)
-const RENDER_API_BASE = 'https://api.render.com/v1';
-const RENDER_API_KEY = process.env.RENDER_API_KEY;        // configure no Render
-const RENDER_SERVICE_ID = process.env.RENDER_SERVICE_ID;  // configure no Render (srv-...)
-
 /* ---------------------------
    Validação simples de ENV
    --------------------------- */
 function validarEnv() {
-  const required = ['CLIENT_ID','CLIENT_SECRET','REDIRECT_URI','WIX_ENDPOINT'];
+  const required = ['CLIENT_ID','CLIENT_SECRET','REDIRECT_URI'];
   const missing = required.filter(k => !process.env[k]);
   if (missing.length) {
     console.error('❌ Variáveis de ambiente faltando:', missing.join(', '));
@@ -47,69 +41,6 @@ function validarEnv() {
   }
 }
 validarEnv();
-
-/* ---------------------------
-   Helpers Render API (env-vars)
-   --------------------------- */
-async function listRenderEnvVars(serviceId) {
-  const url = `${RENDER_API_BASE}/services/${serviceId}/env-vars`;
-  const resp = await axios.get(url, {
-    headers: { Authorization: `Bearer ${RENDER_API_KEY}` },
-    timeout: 15000
-  });
-  return resp.data; // array
-}
-
-async function patchRenderEnvVar(serviceId, envId, newValue) {
-  const url = `${RENDER_API_BASE}/services/${serviceId}/env-vars/${envId}`;
-  const resp = await axios.patch(url, { value: newValue }, {
-    headers: { Authorization: `Bearer ${RENDER_API_KEY}` },
-    timeout: 15000
-  });
-  return resp.data;
-}
-
-async function postRenderEnvVars(serviceId, varsArray) {
-  const url = `${RENDER_API_BASE}/services/${serviceId}/env-vars`;
-  const resp = await axios.post(url, varsArray, {
-    headers: { Authorization: `Bearer ${RENDER_API_KEY}`, 'Content-Type': 'application/json' },
-    timeout: 15000
-  });
-  return resp.data;
-}
-
-async function updateRenderRefreshToken(newRefreshToken) {
-  if (!RENDER_API_KEY || !RENDER_SERVICE_ID) {
-    console.warn('⚠️ RENDER_API_KEY ou RENDER_SERVICE_ID não configurados; pulando atualização automática no Render.');
-    return false;
-  }
-
-  try {
-    console.log('🔃 Atualizando REFRESH_TOKEN no Render (serviceId:', RENDER_SERVICE_ID, ')...');
-
-    const envVars = await listRenderEnvVars(RENDER_SERVICE_ID);
-    const existing = Array.isArray(envVars) ? envVars.find(ev => ev.key === 'REFRESH_TOKEN') : null;
-
-    if (existing) {
-      try {
-        await patchRenderEnvVar(RENDER_SERVICE_ID, existing.id, newRefreshToken);
-        console.log('✅ REFRESH_TOKEN atualizado (patch) no Render.');
-        return true;
-      } catch (patchErr) {
-        console.warn('⚠️ Patch falhou, tentando criar via POST. Erro:', patchErr.response ? patchErr.response.data : patchErr.message);
-        // fallback continua para POST
-      }
-    }
-
-    await postRenderEnvVars(RENDER_SERVICE_ID, [{ key: 'REFRESH_TOKEN', value: newRefreshToken }]);
-    console.log('✅ REFRESH_TOKEN criado/atualizado (post) no Render.');
-    return true;
-
-  } catch (err) {
-    console.error('❌ Falha ao atualizar REFRESH_TOKEN no Render:', err.response ? err.response.data : err.message);
-    return false;
-  }
-}
 
 /* ---------------------------
    Função para autenticar com o Bling usando refresh_token
@@ -150,13 +81,8 @@ async function autenticarBling() {
         console.log('✅ Autenticação bem-sucedida! token obtido.');
 
         if (response.data.refresh_token) {
-            console.log('ℹ️ Novo refresh_token recebido (será usado em memória e tentaremos persistir no Render).');
+            console.log('ℹ️ Novo refresh_token recebido (será usado em memória).');
             REFRESH_TOKEN = response.data.refresh_token;
-
-            // tenta persistir no Render (não bloqueia a execução)
-            updateRenderRefreshToken(REFRESH_TOKEN).catch(e => {
-              console.warn('⚠️ updateRenderRefreshToken error:', e && e.message ? e.message : e);
-            });
         }
         
         return accessToken;
@@ -356,14 +282,6 @@ app.get('/callback', async (req, res) => {
 
             accessToken = response.data.access_token;
             REFRESH_TOKEN = response.data.refresh_token;
-
-            // tenta persistir no Render (se configurado)
-            try {
-              await updateRenderRefreshToken(REFRESH_TOKEN);
-              console.log('✅ REFRESH_TOKEN persistido no Render via /callback.');
-            } catch (e) {
-              console.warn('⚠️ Falha ao persistir REFRESH_TOKEN no Render via /callback:', e && e.message ? e.message : e);
-            }
             
             res.send(`
                 <h2>✅ REFRESH_TOKEN gerado!</h2>
@@ -378,7 +296,7 @@ app.get('/callback', async (req, res) => {
                 <ol>
                     <li>Copie o token acima</li>
                     <li>Vá ao Render > Environment Variables</li>
-                    <li>Atualize REFRESH_TOKEN (se desejar)</li>
+                    <li>Atualize REFRESH_TOKEN</li>
                     <li>Salve para redeploy</li>
                 </ol>
             `);
