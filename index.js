@@ -1,4 +1,4 @@
-// index.js - CORRIGIDO v4.2 (mutex refresh, single-fetch, Cloudflare/429 handling)
+// index.js - CORRIGIDO v4.2 (exibe refresh_token completo no /callback)
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
@@ -308,6 +308,7 @@ app.get('/auth', (req, res) => {
   res.send(`<h1>🔐 Autorização OAuth - Bling</h1><a href="${authUrl}" target="_blank">🔑 Autorizar no Bling</a>`);
 });
 
+// ALTERAÇÃO: Exibe o refresh_token COMPLETO na tela do /callback
 app.get('/callback', async (req, res) => {
   const { code, error } = req.query;
   if (error) return res.send(`<h2>❌ Erro: ${error}</h2>`);
@@ -346,12 +347,22 @@ app.get('/callback', async (req, res) => {
     accessToken = response.data.access_token;
     REFRESH_TOKEN = response.data.refresh_token;
 
-    // Mostrar token gerado (avisando para persistir manualmente)
-    const masked = REFRESH_TOKEN && REFRESH_TOKEN.length > 10 ? `${REFRESH_TOKEN.slice(0,6)}...${REFRESH_TOKEN.slice(-4)}` : '***';
+    // Exibe o refresh_token COMPLETO na tela (sem mascarar)
     res.send(`
       <h2>✅ REFRESH_TOKEN gerado!</h2>
-      <p>Token (mascarado): <code>${masked}</code></p>
-      <p>Copie o token completo a partir dos logs do servidor (se estiver visível) ou do response JSON local. Em seguida atualize REFRESH_TOKEN nas Environment Variables do Render e faça redeploy.</p>
+      <div style="background: #f8f9fa; padding: 15px; margin: 15px 0;">
+          <h3>🔑 Novo REFRESH_TOKEN (completo):</h3>
+          <code style="background: #e9ecef; padding: 8px; display: block; word-break: break-all; font-size: 1.1em; color: #222;">
+              ${REFRESH_TOKEN}
+          </code>
+      </div>
+      <h3>📋 Instruções:</h3>
+      <ol>
+          <li>Copie o token acima (tudo, sem espaços extras)</li>
+          <li>Vá ao Render → Environment Variables</li>
+          <li>Atualize REFRESH_TOKEN</li>
+          <li>Salve e redeploy</li>
+      </ol>
     `);
   } catch (tokenError) {
     console.error('❌ Erro ao gerar token (callback):', tokenError.response ? tokenError.response.data : tokenError.message);
