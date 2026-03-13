@@ -446,24 +446,4 @@ app.get('/produtos', async (req, res) => {
 });
 
 app.get('/ping', (req, res) => {
-  res.json({ status: 'alive', versao: 'CORRIGIDA v4.2', timestamp: new Date().toISOString(), cache: { produtos: produtosCache.length, valido: cacheValido(), timestamp: cacheTimestamp ? new Date(cacheTimestamp).toISOString() : null } });
-});
-
-app.listen(PORT, async () => {
-  console.log(`🚀 Servidor CORRIGIDO rodando na porta ${PORT}`);
-  console.log(`🎉 VERSÃO: CORRIGIDA v4.2`);
-  if (PRELOAD_CACHE) {
-    console.log('🔄 PRELOAD_CACHE=true → inicializando cache agora...');
-    try {
-      await autenticarBling();
-      const produtos = await buscarProdutosBling();
-      produtosCache = produtos;
-      cacheTimestamp = Date.now();
-      console.log(`✅ Cache inicializado: ${produtos.length} produtos`);
-    } catch (err) {
-      console.log('⚠️ Falha na inicialização do cache:', err.message);
-    }
-  } else {
-    console.log('ℹ️ PRELOAD_CACHE=false → não inicializando cache automaticamente.');
-  }
-});
+  res.json({ status: 'alive', versao: 'CORRIGIDA v4.2', timestamp: new Date().toISOString(), cache
