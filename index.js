@@ -175,7 +175,8 @@ async function buscarProdutosBling() {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Accept': '1.0',
-          'User-Agent': 'Bling-Wix-Integration/1.0'
+          'User-Agent': 'Bling-Wix-Integration/1.0',
+          'enable-jwt': '1' // Header obrigatório para requisições autenticadas
         },
         timeout: 15000,
         validateStatus: () => true
